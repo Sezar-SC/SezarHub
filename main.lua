@@ -1,1 +1,1 @@
-   print("Hub yüklendi!")
+   print("Hub yuklendi")
