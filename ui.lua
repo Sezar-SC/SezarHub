@@ -1,10 +1,14 @@
--- SezarHub UI kutuphanesi
+-- SezarHub UI library v2
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local Debris = game:GetService("Debris")
+local HttpService = game:GetService("HttpService")
 
-local Library = { _conns = {}, OnUnload = {}, ToggleKey = Enum.KeyCode.RightShift }
+local Library = {
+	_conns = {}, OnUnload = {}, ToggleKey = Enum.KeyCode.RightShift,
+	Flags = {}, Setters = {}, Binding = false, AutoSave = false, Loading = false,
+}
 
 local Theme = {
 	Bg = Color3.fromRGB(10, 8, 16),
@@ -52,6 +56,7 @@ local function getParent()
 end
 
 local parent = getParent()
+Library.GuiParent = parent
 local old = parent:FindFirstChild("SezarHub")
 if old then old:Destroy() end
 
@@ -62,7 +67,48 @@ local Gui = create("ScreenGui", {
 pcall(function() if syn and syn.protect_gui then syn.protect_gui(Gui) end end)
 Gui.Parent = parent
 
--- ========== BILDIRIMLER (sag ust) ==========
+-- ========== CONFIG (save / load) ==========
+local CFG_FOLDER = "SezarHub"
+local CFG_FILE = CFG_FOLDER .. "/" .. tostring(game.PlaceId) .. ".json"
+Library.CanSave = (type(writefile) == "function" and type(readfile) == "function"
+	and type(isfile) == "function" and type(makefolder) == "function" and type(isfolder) == "function")
+
+function Library.Save()
+	if not Library.CanSave then return false end
+	local ok = pcall(function()
+		if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end
+		writefile(CFG_FILE, HttpService:JSONEncode(Library.Flags))
+	end)
+	return ok
+end
+
+local saveQueued = false
+local function queueSave()
+	if saveQueued or not Library.AutoSave or Library.Loading then return end
+	saveQueued = true
+	task.delay(1, function()
+		saveQueued = false
+		Library.Save()
+	end)
+end
+
+function Library.Load()
+	if not Library.CanSave then return false end
+	local ok, data = pcall(function()
+		if not isfile(CFG_FILE) then return nil end
+		return HttpService:JSONDecode(readfile(CFG_FILE))
+	end)
+	if not ok or type(data) ~= "table" then return false end
+	Library.Loading = true
+	for flag, value in pairs(data) do
+		local setter = Library.Setters[flag]
+		if setter then pcall(setter, value) end
+	end
+	Library.Loading = false
+	return true
+end
+
+-- ========== NOTIFICATIONS (top right) ==========
 local NotifHolder = create("Frame", {
 	BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0),
 	Position = UDim2.new(1, -16, 0, 16), Size = UDim2.new(0, 290, 1, -32), ZIndex = 100,
@@ -111,9 +157,8 @@ function Library.Notify(title, sub, kind, dur)
 	end)
 end
 
--- ========== EFEKTLER ==========
+-- ========== EFFECTS ==========
 local function burst(center, W, H)
-	-- merkezden yayilan halka
 	local ring = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(center.X, center.Y),
 		Size = UDim2.fromOffset(120, 120), BackgroundTransparency = 1, ZIndex = 40,
@@ -124,7 +169,6 @@ local function burst(center, W, H)
 	tween(rs, 0.8, { Transparency = 1 })
 	Debris:AddItem(ring, 1)
 
-	-- kenarlardan firlayan parcaciklar
 	local hw, hh = math.floor(W / 2), math.floor(H / 2)
 	for i = 1, 44 do
 		local side = math.random(1, 4)
@@ -166,7 +210,7 @@ local function popIn(page, startScale)
 	end
 end
 
--- ========== PENCERE ==========
+-- ========== WINDOW ==========
 function Library.CreateWindow()
 	local W, H = 660, 430
 	local Window = {}
@@ -181,12 +225,11 @@ function Library.CreateWindow()
 	local MainStroke = stroke(Main, Theme.Purple, 2)
 	local Scale = create("UIScale", { Scale = 0 }, Main)
 
-	-- baslik
 	local Header = create("Frame", {
 		BackgroundColor3 = Theme.Panel, Size = UDim2.new(1, 0, 0, 50), BorderSizePixel = 0,
 	}, Main)
 	corner(Header, 12)
-	create("Frame", { -- alt koseleri duzlestir
+	create("Frame", {
 		BackgroundColor3 = Theme.Panel, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0),
 		Size = UDim2.new(1, 0, 0, 12), BorderSizePixel = 0,
 	}, Header)
@@ -204,7 +247,7 @@ function Library.CreateWindow()
 	create("TextLabel", {
 		BackgroundTransparency = 1, Position = UDim2.fromOffset(128, 0), Size = UDim2.new(0, 120, 1, 0),
 		Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = Theme.Sub,
-		TextXAlignment = Enum.TextXAlignment.Left, Text = "v1.0  |  RightShift: gizle/goster",
+		TextXAlignment = Enum.TextXAlignment.Left, Text = "v2.0",
 	}, Header)
 
 	local Close = create("TextButton", {
@@ -216,7 +259,6 @@ function Library.CreateWindow()
 	Close.MouseEnter:Connect(function() tween(Close, 0.15, { BackgroundColor3 = Theme.Off }) end)
 	Close.MouseLeave:Connect(function() tween(Close, 0.15, { BackgroundColor3 = Theme.Item }) end)
 
-	-- surukleme
 	local dragging, dragStart, startPos
 	Header.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -233,7 +275,6 @@ function Library.CreateWindow()
 		end
 	end)
 
-	-- sekme cubugu
 	local TabBar = create("Frame", {
 		BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 50), Size = UDim2.new(1, 0, 0, 40),
 	}, Main)
@@ -264,7 +305,7 @@ function Library.CreateWindow()
 		popIn(t.Page, 0.8)
 	end
 
-	-- ===== Sekme =====
+	-- ===== Tab =====
 	local Tab = {}
 	Tab.__index = Tab
 
@@ -284,7 +325,7 @@ function Library.CreateWindow()
 		local args = { ... }
 		task.spawn(function()
 			local ok, err = pcall(function() cb(unpack(args)) end)
-			if not ok then Library.Notify("Hata", tostring(err), "off", 5) end
+			if not ok then Library.Notify("Error", tostring(err), "off", 5) end
 		end)
 	end
 
@@ -299,19 +340,21 @@ function Library.CreateWindow()
 
 	function Tab:Label(text)
 		local f = item(self, 30, true)
-		create("TextLabel", {
+		local l = create("TextLabel", {
 			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.Gotham,
 			TextSize = 13, TextColor3 = Theme.Sub, TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true, Text = text,
 		}, f)
+		return { Set = function(t) l.Text = t end }
 	end
 
-	function Tab:Toggle(text, default, cb)
+	-- Toggle: {Name, Default, Flag, Key (Enum.KeyCode), NoKey, Callback}
+	function Tab:Toggle(o)
 		local f = item(self, 42)
 		create("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -80, 1, 0),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -150, 1, 0),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left, Text = text,
+			TextXAlignment = Enum.TextXAlignment.Left, Text = o.Name,
 		}, f)
 		local sw = create("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0),
@@ -326,34 +369,97 @@ function Library.CreateWindow()
 		local btn = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0) }, f)
 
 		local state = false
+		local keyName = o.Key and o.Key.Name or nil
+		local keyBtn
+
 		local function visual(v)
 			tween(sw, 0.25, { BackgroundColor3 = v and Theme.Purple or Theme.SwitchOff })
 			tween(knob, 0.3, { Position = v and UDim2.fromOffset(25, 3) or UDim2.fromOffset(3, 3) }, Enum.EasingStyle.Back)
 		end
-		local function set(v)
-			state = v
-			visual(v)
-			Library.Notify(text .. (v and " acildi" or " kapatildi"), v and "Ozellik aktif" or "Ozellik pasif", v and "on" or "off")
-			safe(cb, v)
+
+		local function set(v, silent)
+			state = v and true or false
+			if o.Flag then Library.Flags[o.Flag] = state; queueSave() end
+			visual(state)
+			if not silent then
+				Library.Notify(o.Name .. (state and " enabled" or " disabled"), state and "Feature active" or "Feature inactive", state and "on" or "off")
+			end
+			safe(o.Callback, state)
 		end
+
 		btn.MouseButton1Click:Connect(function() set(not state) end)
 		btn.MouseEnter:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.ItemHover }) end)
 		btn.MouseLeave:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.Item }) end)
-		if default then state = true; visual(true); safe(cb, true) end
-		return { Set = set }
+
+		if not o.NoKey then
+			keyBtn = create("TextButton", {
+				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -72, 0.5, 0), Size = UDim2.fromOffset(62, 22),
+				BackgroundColor3 = Theme.Panel, Text = keyName or "-", Font = Enum.Font.GothamBold, TextSize = 11,
+				TextColor3 = Theme.Sub, AutoButtonColor = false, TextTruncate = Enum.TextTruncate.AtEnd,
+			}, f)
+			corner(keyBtn, 6)
+			stroke(keyBtn, Theme.PurpleDark, 1)
+
+			local function setKey(name)
+				if name == "None" or name == nil then keyName = nil else keyName = name end
+				keyBtn.Text = keyName or "-"
+				keyBtn.TextColor3 = keyName and Theme.Purple or Theme.Sub
+				if o.Flag then Library.Flags[o.Flag .. "_key"] = keyName or "None"; queueSave() end
+			end
+			setKey(keyName)
+
+			keyBtn.MouseButton1Click:Connect(function()
+				if Library.Binding then return end
+				Library.Binding = true
+				keyBtn.Text = "..."
+				local c
+				c = UIS.InputBegan:Connect(function(i)
+					if i.UserInputType == Enum.UserInputType.Keyboard then
+						c:Disconnect()
+						if i.KeyCode == Enum.KeyCode.Escape or i.KeyCode == Enum.KeyCode.Backspace then
+							setKey("None")
+						else
+							setKey(i.KeyCode.Name)
+							Library.Notify("Keybind set", o.Name .. " = " .. i.KeyCode.Name, "on", 2)
+						end
+						task.delay(0.15, function() Library.Binding = false end)
+					end
+				end)
+			end)
+
+			Library.Connect(UIS.InputBegan, function(i, gp)
+				if gp or Library.Binding or not keyName then return end
+				if i.UserInputType == Enum.UserInputType.Keyboard and i.KeyCode.Name == keyName then
+					set(not state)
+				end
+			end)
+
+			if o.Flag then
+				Library.Setters[o.Flag .. "_key"] = function(v) setKey(v) end
+			end
+		end
+
+		if o.Flag then
+			Library.Flags[o.Flag] = false
+			Library.Setters[o.Flag] = function(v) set(v, true) end
+		end
+		if o.Default then set(true, true) end
+		return { Set = function(v) set(v) end, Get = function() return state end }
 	end
 
-	function Tab:Slider(text, min, max, default, cb, hardMax)
-		hardMax = hardMax or max
+	-- Slider: {Name, Min, Max, Default, HardMax, Flag, Callback}
+	function Tab:Slider(o)
+		local min, max = o.Min, o.Max
+		local hardMax = o.HardMax or max
 		local f = item(self, 60)
 		create("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -110, 0, 22),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left, Text = text,
+			TextXAlignment = Enum.TextXAlignment.Left, Text = o.Name,
 		}, f)
 		local box = create("TextBox", {
 			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 6), Size = UDim2.fromOffset(70, 24),
-			BackgroundColor3 = Theme.Panel, Text = tostring(default), TextColor3 = Theme.Text,
+			BackgroundColor3 = Theme.Panel, Text = tostring(o.Default), TextColor3 = Theme.Text,
 			Font = Enum.Font.GothamBold, TextSize = 13, ClearTextOnFocus = false,
 		}, f)
 		corner(box, 6)
@@ -371,7 +477,7 @@ function Library.CreateWindow()
 		}, fill)
 		corner(knob, 8)
 
-		local value = default
+		local value = o.Default
 		local function setValue(v, animate)
 			v = math.clamp(math.floor(v + 0.5), min, hardMax)
 			value = v
@@ -379,9 +485,16 @@ function Library.CreateWindow()
 			if animate then tween(fill, 0.25, { Size = UDim2.new(a, 0, 1, 0) })
 			else fill.Size = UDim2.new(a, 0, 1, 0) end
 			box.Text = tostring(v)
-			safe(cb, v)
+			if o.Flag then Library.Flags[o.Flag] = v; queueSave() end
+			safe(o.Callback, v)
 		end
-		setValue(default, false)
+		setValue(o.Default, false)
+
+		if o.Flag then
+			Library.Setters[o.Flag] = function(v)
+				if tonumber(v) then setValue(tonumber(v), false) end
+			end
+		end
 
 		local sliding = false
 		local function fromInput(x)
@@ -402,19 +515,116 @@ function Library.CreateWindow()
 		Library.Connect(UIS.InputEnded, function(i)
 			if sliding and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
 				sliding = false
-				Library.Notify(text .. ": " .. value, "Deger ayarlandi", "on", 2)
+				Library.Notify(o.Name .. ": " .. value, "Value updated", "on", 2)
 			end
 		end)
 		box.FocusLost:Connect(function()
 			local n = tonumber(box.Text)
 			if n then
 				setValue(n, true)
-				Library.Notify(text .. ": " .. value, "Deger ayarlandi", "on", 2)
+				Library.Notify(o.Name .. ": " .. value, "Value updated", "on", 2)
 			else
 				box.Text = tostring(value)
 			end
 		end)
 		return { Set = function(v) setValue(v, true) end }
+	end
+
+	-- Dropdown: {Name, Options (table or function), Default, Flag, Callback}
+	function Tab:Dropdown(o)
+		local f = item(self, 42)
+		f.ClipsDescendants = true
+		create("TextLabel", {
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -190, 0, 42),
+			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
+			TextXAlignment = Enum.TextXAlignment.Left, Text = o.Name,
+		}, f)
+		local sel = create("TextButton", {
+			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 9), Size = UDim2.fromOffset(150, 24),
+			BackgroundColor3 = Theme.Panel, Text = "", AutoButtonColor = false,
+		}, f)
+		corner(sel, 6)
+		stroke(sel, Theme.PurpleDark, 1)
+		local selText = create("TextLabel", {
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -28, 1, 0),
+			Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = Theme.Text,
+			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = "None",
+		}, sel)
+		local arrow = create("TextLabel", {
+			BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -6, 0.5, 0),
+			Size = UDim2.fromOffset(16, 16), Font = Enum.Font.GothamBold, TextSize = 12,
+			TextColor3 = Theme.Purple, Text = "v",
+		}, sel)
+		local list = create("ScrollingFrame", {
+			Position = UDim2.fromOffset(14, 46), Size = UDim2.new(1, -28, 0, 0), BackgroundColor3 = Theme.Panel,
+			BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Purple,
+			CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		}, f)
+		corner(list, 6)
+		create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, list)
+		create("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingLeft = UDim.new(0, 2) }, list)
+
+		local opened = false
+		local value = o.Default
+		local close
+
+		local function setValue(v, silent)
+			value = v
+			selText.Text = tostring(v == nil and "None" or v)
+			if o.Flag then Library.Flags[o.Flag] = v; queueSave() end
+			if not silent and v ~= nil then
+				Library.Notify(o.Name .. ": " .. tostring(v), "Selected", "on", 2)
+			end
+			if v ~= nil then safe(o.Callback, v) end
+		end
+
+		local function populate()
+			for _, c in ipairs(list:GetChildren()) do
+				if c:IsA("TextButton") then c:Destroy() end
+			end
+			local opts = o.Options
+			if type(opts) == "function" then opts = opts() end
+			opts = opts or {}
+			for idx, name in ipairs(opts) do
+				local b = create("TextButton", {
+					Size = UDim2.new(1, -8, 0, 26), BackgroundColor3 = Theme.Item, Text = tostring(name),
+					Font = Enum.Font.GothamMedium, TextSize = 13, AutoButtonColor = false, LayoutOrder = idx,
+					TextColor3 = (name == value) and Theme.Purple or Theme.Text,
+				}, list)
+				corner(b, 6)
+				b.MouseEnter:Connect(function() tween(b, 0.12, { BackgroundColor3 = Theme.ItemHover }) end)
+				b.MouseLeave:Connect(function() tween(b, 0.12, { BackgroundColor3 = Theme.Item }) end)
+				b.MouseButton1Click:Connect(function()
+					setValue(name)
+					close()
+				end)
+			end
+			return #opts
+		end
+
+		local function open()
+			opened = true
+			local n = populate()
+			local listH = math.max(1, math.min(n, 5)) * 28 + 4
+			list.Size = UDim2.new(1, -28, 0, listH)
+			tween(f, 0.3, { Size = UDim2.new(1, 0, 0, 54 + listH) }, Enum.EasingStyle.Back)
+			tween(arrow, 0.25, { Rotation = 180 })
+		end
+		function close()
+			opened = false
+			tween(f, 0.25, { Size = UDim2.new(1, 0, 0, 42) })
+			tween(arrow, 0.25, { Rotation = 0 })
+		end
+		sel.MouseButton1Click:Connect(function()
+			if opened then close() else open() end
+		end)
+
+		if o.Flag then
+			Library.Flags[o.Flag] = value
+			Library.Setters[o.Flag] = function(v) setValue(v, true) end
+		end
+		if value ~= nil then setValue(value, true) end
+		return { Set = function(v) setValue(v) end, Refresh = populate }
 	end
 
 	function Tab:Button(text, cb)
@@ -499,10 +709,10 @@ function Library.CreateWindow()
 
 	Close.MouseButton1Click:Connect(function()
 		Window:Hide()
-		Library.Notify("Menu gizlendi", "Acmak icin RightShift", "off")
+		Library.Notify("Menu hidden", "Press " .. Library.ToggleKey.Name .. " to open", "off")
 	end)
 	Library.Connect(UIS.InputBegan, function(i, gp)
-		if not gp and i.KeyCode == Library.ToggleKey then Window:Toggle() end
+		if not gp and not Library.Binding and i.KeyCode == Library.ToggleKey then Window:Toggle() end
 	end)
 
 	return Window
