@@ -1,4 +1,5 @@
+-- PlaceId (or GameId) -> game file
+-- To add a game: [PLACE_ID] = "games/filename.lua",
 return {
-	[2753915549] = "games/bloxfruits.lua",
-	[286090429]  = "games/arsenal.lua",
+	-- [1234567890] = "games/example.lua",
 }
