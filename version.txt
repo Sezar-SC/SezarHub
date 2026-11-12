@@ -1,2 +1,2 @@
-2.2
-Theme manager, key system and update notes
+2.3.0
+Key failures now stop startup; VIP remains disabled without server verification

@@ -1,4 +1,4 @@
--- SezarHub loader v2.2
+-- SezarHub loader v2.3
 local BASE = "https://raw.githubusercontent.com/Sezar-SC/SezarHub/main/"
 
 local function fetchText(path)
@@ -22,9 +22,18 @@ end
 local Library = fetch("ui.lua")
 if not Library then return end
 
+local function stopStartup(message)
+	warn("[SezarHub] " .. message)
+	if Library.Notify then pcall(Library.Notify, "Startup failed", message, "off", 6) end
+	return
+end
+
 -- Config + version
 local Config = fetch("config.lua")
-if type(Config) ~= "table" then Config = {} end
+if type(Config) ~= "table" then
+	stopStartup("Configuration could not be loaded. Please try again later.")
+	return
+end
 Library.Config = Config
 Config.Discord = Config.Discord or "discord.gg/YOURLINK"
 
@@ -40,14 +49,14 @@ Library.Version = ver
 local Lang = fetch("lang.lua")
 if type(Lang) == "table" then Library.Dict = Lang.Dict end
 
--- Role (VIP system is shelved unless Config.VIPEnabled = true)
-Library.VIPEnabled = Config.VIPEnabled == true
+-- VIP roles cannot be trusted when they come from client-downloaded files.
+-- Keep VIP-only UI disabled until a server-side verifier is configured.
+Library.VIPEnabled = false
 Library.Tier = 0
-if Library.VIPEnabled then
-	local vip = fetch("vip.lua")
-	if type(vip) == "table" and type(vip.Users) == "table" then
-		local role = vip.Users[game:GetService("Players").LocalPlayer.UserId]
-		if role == "VIP" then Library.Tier = 2 elseif role == "Subscriber" then Library.Tier = 1 end
+if Config.VIPEnabled == true then
+	warn("[SezarHub] VIP is configured but no server verifier is available; using Free access")
+	if Library.Notify then
+		pcall(Library.Notify, "VIP unavailable", "Server verification is not configured", "off", 5)
 	end
 end
 Library.Role = (Library.Tier == 2 and "VIP") or (Library.Tier == 1 and "Subscriber") or "Free"
@@ -56,7 +65,12 @@ Library.Role = (Library.Tier == 2 and "VIP") or (Library.Tier == 1 and "Subscrib
 local themeFn = fetch("theme.lua")
 if type(themeFn) == "function" then
 	local ok, err = pcall(themeFn, Library)
-	if not ok then warn("[SezarHub] theme.lua error: " .. tostring(err)) end
+	if not ok then
+		warn("[SezarHub] theme.lua error: " .. tostring(err))
+		pcall(Library.Notify, "Theme unavailable", "Default theme will be used", "off", 5)
+	end
+elseif not themeFn then
+	pcall(Library.Notify, "Theme unavailable", "Default theme will be used", "off", 5)
 end
 if Library.PreloadGlobals then pcall(Library.PreloadGlobals) end
 
@@ -76,32 +90,41 @@ local function writeSaved(path, text)
 	end)
 end
 
--- Key gate (weekly shared key)
-if Config.KeyEnabled then
+-- Key gate. Any missing or invalid dependency stops startup.
+if Config.KeyEnabled ~= false then
 	local keys = fetch("keys.lua")
 	local list = type(keys) == "table" and keys.Keys
-	if type(list) == "table" and #list > 0 then
-		local function norm(s) return (tostring(s):gsub("%s+", "")):upper() end
-		local function valid(k)
-			k = norm(k)
-			for _, v in ipairs(list) do
-				if norm(v) == k then return true end
-			end
-			return false
+	if type(list) ~= "table" or #list == 0 then
+		stopStartup("Key verification is unavailable. Access is blocked.")
+		return
+	end
+
+	local function norm(value)
+		if type(value) ~= "string" then return "" end
+		return (value:gsub("%s+", "")):upper()
+	end
+	local function valid(key)
+		key = norm(key)
+		if key == "" then return false end
+		for _, value in ipairs(list) do
+			if norm(value) ~= "" and norm(value) == key then return true end
 		end
-		local saved = readSaved("SezarHub/key.txt")
-		if not (saved and valid(saved)) then
-			local screen = fetch("keyscreen.lua")
-			if type(screen) == "function" then
-				local entered = screen(Library, valid, Config.Discord)
-				if not entered then return end
-				writeSaved("SezarHub/key.txt", entered)
-			else
-				warn("[SezarHub] key screen could not load, continuing without key")
-			end
+		return false
+	end
+
+	local saved = readSaved("SezarHub/key.txt")
+	if not (saved and valid(saved)) then
+		local screen = fetch("keyscreen.lua")
+		if type(screen) ~= "function" then
+			stopStartup("Key screen could not be loaded. Access is blocked.")
+			return
 		end
-	else
-		warn("[SezarHub] keys.lua missing or empty, continuing without key")
+		local ok, entered = pcall(screen, Library, valid, Config.Discord)
+		if not ok or not valid(entered) then
+			stopStartup("A valid key is required to continue.")
+			return
+		end
+		writeSaved("SezarHub/key.txt", entered)
 	end
 end
 
@@ -136,7 +159,12 @@ local function loadModule(path, tab)
 	local fn = fetch(path)
 	if type(fn) == "function" then
 		local ok, err = pcall(fn, tab, Library)
-		if not ok then warn("[SezarHub] " .. path .. " error: " .. tostring(err)) end
+		if not ok then
+			warn("[SezarHub] " .. path .. " error: " .. tostring(err))
+			pcall(Library.Notify, "Module error", path .. " could not be loaded", "off", 5)
+		end
+	else
+		pcall(Library.Notify, "Module unavailable", path .. " could not be downloaded", "off", 5)
 	end
 end
 
@@ -156,7 +184,12 @@ if gamePath then
 	local gameFn = fetch(gamePath)
 	if type(gameFn) == "function" then
 		local ok, err = pcall(gameFn, Window, Library)
-		if not ok then warn("[SezarHub] " .. gamePath .. " error: " .. tostring(err)) end
+		if not ok then
+			warn("[SezarHub] " .. gamePath .. " error: " .. tostring(err))
+			pcall(Library.Notify, "Game module error", gamePath .. " could not be loaded", "off", 5)
+		end
+	else
+		pcall(Library.Notify, "Game module unavailable", gamePath .. " could not be downloaded", "off", 5)
 	end
 end
 

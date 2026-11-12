@@ -1,0 +1,12 @@
+# Local secrets and developer-only settings
+.env
+.env.*
+!.env.example
+keys.local.lua
+vip.local.lua
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
