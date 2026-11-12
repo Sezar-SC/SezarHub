@@ -274,7 +274,7 @@ local function popIn(page, startScale)
 end
 
 -- ========== WELCOME SPLASH ==========
-function Library.Splash(duration)
+function Library.Splash(duration, welcomeText)
 	duration = duration or 2.6
 	local overlay = create("Frame", {
 		Name = "Splash", Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(6, 4, 12),
@@ -294,8 +294,17 @@ function Library.Splash(duration)
 			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), Font = Enum.Font.GothamBold,
 			TextSize = 24, TextColor3 = Theme.Purple, TextTransparency = 1, Text = "",
 		}, box)
-		local wr = reg(welcome, "WELCOME")
-		table.remove(Library._tr, #Library._tr) -- splash label is temporary
+		if type(welcomeText) == "string" and welcomeText ~= "" then
+			welcome.Text = welcomeText
+		else
+			reg(welcome, "WELCOME")
+			table.remove(Library._tr, #Library._tr) -- splash label is temporary
+		end
+		create("UIGradient", {
+			Name = "SezarThemeGradient",
+			Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
+			Rotation = 0,
+		}, welcome)
 
 		local row = create("Frame", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 40), Size = UDim2.new(1, 0, 0, 100),
@@ -364,6 +373,7 @@ function Library.CreateWindow()
 	local tabs, current = {}, nil
 	local isOpen = false
 	local firstOpen = true
+	local MobileToggle
 
 	local Main = create("Frame", {
 		Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0),
@@ -372,11 +382,17 @@ function Library.CreateWindow()
 	corner(Main, 12)
 	local MainStroke = stroke(Main, Theme.Purple, 2)
 	local Scale = create("UIScale", { Scale = 0 }, Main)
+	local compact = false
 
 	local Header = create("Frame", {
 		BackgroundColor3 = Theme.Panel, Size = UDim2.new(1, 0, 0, 50), BorderSizePixel = 0,
 	}, Main)
 	corner(Header, 12)
+	create("UIGradient", {
+		Name = "SezarThemeGradient",
+		Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
+		Rotation = 0,
+	}, Header)
 	create("Frame", {
 		BackgroundColor3 = Theme.Panel, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0),
 		Size = UDim2.new(1, 0, 0, 12), BorderSizePixel = 0,
@@ -387,6 +403,11 @@ function Library.CreateWindow()
 		Size = UDim2.fromOffset(104, 28), BorderSizePixel = 0,
 	}, Header)
 	corner(plate, 7)
+	create("UIGradient", {
+		Name = "SezarThemeGradient",
+		Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
+		Rotation = 0,
+	}, plate)
 	Library.LogoLabel = create("TextLabel", {
 		BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.GothamBlack,
 		TextSize = 18, RichText = true,
@@ -405,6 +426,23 @@ function Library.CreateWindow()
 		TextColor3 = Theme.Text, AutoButtonColor = false,
 	}, Header)
 	corner(Close, 8)
+	local function fitWindow()
+		local viewport = Gui.AbsoluteSize
+		if viewport.X <= 0 or viewport.Y <= 0 then
+			local camera = workspace.CurrentCamera
+			if camera then viewport = camera.ViewportSize end
+		end
+		if viewport.X <= 0 or viewport.Y <= 0 then return end
+		compact = UIS.TouchEnabled or viewport.X < 720
+		W = math.max(280, math.min(660, viewport.X - 24))
+		H = math.max(280, math.min(430, viewport.Y - 32))
+		Main.Size = UDim2.fromOffset(W, H)
+		Close.Size = UDim2.fromOffset(compact and 40 or 30, compact and 40 or 30)
+		Library.DeviceClass = compact and "Touch" or "Desktop"
+		if Library.RefreshTabSizes then Library.RefreshTabSizes() end
+	end
+	fitWindow()
+	Library.Connect(Gui:GetPropertyChangedSignal("AbsoluteSize"), fitWindow)
 	Close.MouseEnter:Connect(function() tween(Close, 0.15, { BackgroundColor3 = Theme.Off }) end)
 	Close.MouseLeave:Connect(function() tween(Close, 0.15, { BackgroundColor3 = Theme.Item }) end)
 
@@ -440,6 +478,15 @@ function Library.CreateWindow()
 		BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 92), Size = UDim2.new(1, 0, 1, -92),
 		ClipsDescendants = true,
 	}, Main)
+
+	function Library.RefreshTabSizes()
+		local count = math.max(5, #tabs)
+		local width = compact and math.max(54, math.floor((Main.AbsoluteSize.X - 12) / count)) or 96
+		for _, tab in ipairs(tabs) do
+			tab.Btn.Size = UDim2.new(0, width, 1, 0)
+			tab.Btn.TextSize = compact and 11 or 14
+		end
+	end
 
 	local function selectTab(t)
 		for _, o in ipairs(tabs) do
@@ -840,6 +887,7 @@ function Library.CreateWindow()
 		}, t.Page)
 		t.Btn.MouseButton1Click:Connect(function() if current ~= t then selectTab(t) end end)
 		table.insert(tabs, t)
+		Library.RefreshTabSizes()
 		return t
 	end
 
@@ -847,6 +895,7 @@ function Library.CreateWindow()
 		if isOpen then return end
 		isOpen = true
 		Main.Visible = true
+		if MobileToggle then MobileToggle.Visible = false end
 		if firstOpen then
 			-- full show only the very first time
 			firstOpen = false
@@ -878,7 +927,12 @@ function Library.CreateWindow()
 		if not isOpen then return end
 		isOpen = false
 		tween(Scale, 0.15, { Scale = 0.9 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-		task.delay(0.16, function() if not isOpen then Main.Visible = false end end)
+		task.delay(0.16, function()
+			if not isOpen then
+				Main.Visible = false
+				if MobileToggle then MobileToggle.Visible = UIS.TouchEnabled end
+			end
+		end)
 	end
 
 	function Window:Toggle()
@@ -892,6 +946,22 @@ function Library.CreateWindow()
 	Library.Connect(UIS.InputBegan, function(i, gp)
 		if not gp and not Library.Binding and i.KeyCode == Library.ToggleKey then Window:Toggle() end
 	end)
+	MobileToggle = create("TextButton", {
+		Name = "SezarHubMobileToggle", AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -18, 1, -24), Size = UDim2.fromOffset(52, 52),
+		BackgroundColor3 = Theme.Panel, Text = "SH", TextColor3 = Theme.Purple,
+		Font = Enum.Font.GothamBlack, TextSize = 16, AutoButtonColor = true,
+		Visible = UIS.TouchEnabled,
+	}, Gui)
+	corner(MobileToggle, 26)
+	stroke(MobileToggle, Theme.Purple, 2)
+	create("UIGradient", {
+		Name = "SezarThemeGradient",
+		Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
+		Rotation = 35,
+	}, MobileToggle)
+	MobileToggle.MouseButton1Click:Connect(function() Window:Toggle() end)
+	Library.MobileToggle = MobileToggle
 
 	return Window
 end
