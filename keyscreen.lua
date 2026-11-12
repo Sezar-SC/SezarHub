@@ -30,9 +30,10 @@ return function(Library, validate, discord)
 	tw(overlay, 0.4, { BackgroundTransparency = 0.15 }, Enum.EasingStyle.Quad)
 
 	local card = mk("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.fromOffset(420, 292),
+		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(1, -32, 0, 292),
 		BackgroundColor3 = Theme.Panel, BorderSizePixel = 0,
 	}, overlay)
+	mk("UISizeConstraint", { MinSize = Vector2.new(280, 292), MaxSize = Vector2.new(420, 292) }, card)
 	round(card, 12)
 	outline(card, Theme.Purple, 2)
 	local scale = mk("UIScale", { Scale = 0 }, card)
