@@ -1,4 +1,4 @@
--- SezarHub UI library v2.1
+-- SezarHub UI library v2.2
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -8,7 +8,7 @@ local HttpService = game:GetService("HttpService")
 local Library = {
 	_conns = {}, _tr = {}, OnUnload = {}, ToggleKey = Enum.KeyCode.RightShift,
 	Flags = {}, GFlags = {}, Setters = {}, Binding = false, AutoSave = false, Loading = false,
-	Lang = "English", Dict = {}, Version = "2.1", GameName = "UNIVERSAL",
+	Lang = "English", Dict = {}, Version = "2.2", GameName = "UNIVERSAL",
 }
 
 local Theme = {
@@ -23,6 +23,7 @@ local Theme = {
 	Off = Color3.fromRGB(230, 70, 90),
 	SwitchOff = Color3.fromRGB(50, 42, 70),
 }
+Library.Theme = Theme
 
 local function create(class, props, parent)
 	local o = Instance.new(class)
@@ -117,6 +118,7 @@ local Gui = create("ScreenGui", {
 })
 pcall(function() if syn and syn.protect_gui then syn.protect_gui(Gui) end end)
 Gui.Parent = parent
+Library.Gui = Gui
 
 -- ========== CONFIG (per game + global) ==========
 local CFG_FOLDER = "SezarHub"
@@ -385,7 +387,7 @@ function Library.CreateWindow()
 		Size = UDim2.fromOffset(104, 28), BorderSizePixel = 0,
 	}, Header)
 	corner(plate, 7)
-	create("TextLabel", {
+	Library.LogoLabel = create("TextLabel", {
 		BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.GothamBlack,
 		TextSize = 18, RichText = true,
 		Text = '<font color="#000000">Sezar</font><font color="#9646FF">Hub</font>',
