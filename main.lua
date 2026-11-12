@@ -1,5 +1,12 @@
--- SezarHub loader
+-- SezarHub loader v2.2
 local BASE = "https://raw.githubusercontent.com/Sezar-SC/SezarHub/main/"
+
+local function fetchText(path)
+	local ok, res = pcall(function() return game:HttpGet(BASE .. path) end)
+	if ok then return res end
+	warn("[SezarHub] " .. path .. " could not be downloaded")
+	return nil
+end
 
 local function fetch(path)
 	local ok, res = pcall(function()
@@ -14,11 +21,89 @@ end
 
 local Library = fetch("ui.lua")
 if not Library then return end
-Library.Version = "2.1"
+
+-- Config + version
+local Config = fetch("config.lua")
+if type(Config) ~= "table" then Config = {} end
+Library.Config = Config
+Config.Discord = Config.Discord or "discord.gg/YOURLINK"
+
+local ver, notes = "2.2", ""
+local verText = fetchText("version.txt")
+if verText then
+	ver = verText:match("^%s*(%S+)") or ver
+	notes = verText:match("^%s*%S+%s*[\r\n]+%s*([^\r\n]+)") or ""
+end
+Library.Version = ver
 
 -- Languages
 local Lang = fetch("lang.lua")
 if type(Lang) == "table" then Library.Dict = Lang.Dict end
+
+-- Role (VIP system is shelved unless Config.VIPEnabled = true)
+Library.VIPEnabled = Config.VIPEnabled == true
+Library.Tier = 0
+if Library.VIPEnabled then
+	local vip = fetch("vip.lua")
+	if type(vip) == "table" and type(vip.Users) == "table" then
+		local role = vip.Users[game:GetService("Players").LocalPlayer.UserId]
+		if role == "VIP" then Library.Tier = 2 elseif role == "Subscriber" then Library.Tier = 1 end
+	end
+end
+Library.Role = (Library.Tier == 2 and "VIP") or (Library.Tier == 1 and "Subscriber") or "Free"
+
+-- Theme manager + saved language/theme (before the key screen)
+local themeFn = fetch("theme.lua")
+if type(themeFn) == "function" then
+	local ok, err = pcall(themeFn, Library)
+	if not ok then warn("[SezarHub] theme.lua error: " .. tostring(err)) end
+end
+if Library.PreloadGlobals then pcall(Library.PreloadGlobals) end
+
+-- File helpers
+local function readSaved(path)
+	if not Library.CanSave then return nil end
+	local ok, res = pcall(function()
+		if isfile(path) then return readfile(path) end
+	end)
+	return ok and res or nil
+end
+local function writeSaved(path, text)
+	if not Library.CanSave then return end
+	pcall(function()
+		if not isfolder("SezarHub") then makefolder("SezarHub") end
+		writefile(path, text)
+	end)
+end
+
+-- Key gate (weekly shared key)
+if Config.KeyEnabled then
+	local keys = fetch("keys.lua")
+	local list = type(keys) == "table" and keys.Keys
+	if type(list) == "table" and #list > 0 then
+		local function norm(s) return (tostring(s):gsub("%s+", "")):upper() end
+		local function valid(k)
+			k = norm(k)
+			for _, v in ipairs(list) do
+				if norm(v) == k then return true end
+			end
+			return false
+		end
+		local saved = readSaved("SezarHub/key.txt")
+		if not (saved and valid(saved)) then
+			local screen = fetch("keyscreen.lua")
+			if type(screen) == "function" then
+				local entered = screen(Library, valid, Config.Discord)
+				if not entered then return end
+				writeSaved("SezarHub/key.txt", entered)
+			else
+				warn("[SezarHub] key screen could not load, continuing without key")
+			end
+		end
+	else
+		warn("[SezarHub] keys.lua missing or empty, continuing without key")
+	end
+end
 
 -- Game detection
 local list = fetch("games/list.lua")
@@ -55,7 +140,7 @@ local function loadModule(path, tab)
 	end
 end
 
--- Tabs (About comes first, so it opens first)
+-- Tabs
 local About = Window:AddTab("About")
 local Movement = Window:AddTab("Movement")
 local ESP = Window:AddTab("ESP")
@@ -67,7 +152,6 @@ loadModule("modules/fly.lua", Movement)
 loadModule("modules/esp.lua", ESP)
 loadModule("modules/misc.lua", Misc)
 
--- Game specific tab
 if gamePath then
 	local gameFn = fetch(gamePath)
 	if type(gameFn) == "function" then
@@ -86,6 +170,18 @@ Settings:Dropdown({
 	Name = "Language", Flag = "language", Global = true, Default = "English",
 	Options = (Lang and Lang.Names) or { "English" },
 	Callback = function(v) Library.SetLanguage(v) end,
+})
+
+Settings:Section("Theme")
+local themeDD
+themeDD = Settings:Dropdown({
+	Name = "Theme", Flag = "theme", Global = true, Default = Library.ThemeName,
+	Options = function() return Library.ThemeOptions and Library.ThemeOptions() or { "Neon Purple" } end,
+	Callback = function(v)
+		if Library.SetTheme and not Library.SetTheme(v) and themeDD then
+			themeDD.Set(Library.ThemeName)
+		end
+	end,
 })
 
 Settings:Section("Menu")
@@ -120,6 +216,7 @@ Settings:Button("Load Config", function()
 end)
 
 Settings:Section("Info")
+Settings:Label("Role", Library.Role)
 Settings:Label("PlaceId: " .. tostring(game.PlaceId) .. "   |   GameId: " .. tostring(game.GameId))
 Settings:Button("Copy PlaceId", function()
 	if setclipboard then
@@ -133,7 +230,7 @@ Settings:Button("Unload Hub", function()
 	Library.Unload()
 end)
 
--- Load saved config (language included), then splash and menu
+-- Load saved config, then splash and menu
 local restored = Library.Load()
 loaded = true
 Library.AutoSave = autoSaveWanted
@@ -141,3 +238,15 @@ Library.AutoSave = autoSaveWanted
 Library.Splash(2.6)
 Window:Open()
 Library.Notify("SezarHub loaded", restored and "Config restored" or "Welcome", "on", 4)
+
+-- Update notice (only when the version changed since the last run)
+local lastSeen = readSaved("SezarHub/lastver.txt")
+local lastClean = lastSeen and (lastSeen:gsub("%s+", "")) or nil
+if lastClean ~= ver then
+	writeSaved("SezarHub/lastver.txt", ver)
+	if lastClean then
+		task.delay(1.4, function()
+			Library.Notify("Updated", "v" .. ver .. (notes ~= "" and (": " .. notes) or ""), "on", 5)
+		end)
+	end
+end
