@@ -1,5 +1,22 @@
 -- Translations: ["English text"] = { Turkish, Russian }
 local TR = {
+	-- Theme + key screen
+	["Theme"] = { "Tema", "Тема" },
+	["Role"] = { "Rol", "Роль" },
+	["Updated"] = { "Güncellendi", "Обновлено" },
+	["Theme locked"] = { "Tema kilitli", "Тема закрыта" },
+	["Subscriber or VIP only"] = { "Sadece Abone veya VIP", "Только для подписчиков и VIP" },
+	["KEY REQUIRED"] = { "KEY GEREKLİ", "НУЖЕН КЛЮЧ" },
+	["Get this week's key from our Discord server, then paste it below."] = {
+		"Bu haftanın key'ini Discord sunucumuzdan al, sonra aşağıya yapıştır.",
+		"Получите ключ этой недели на нашем Discord-сервере и вставьте его ниже.",
+	},
+	["Paste key here..."] = { "Key'i buraya yapıştır...", "Вставьте ключ сюда..." },
+	["Verify"] = { "Doğrula", "Проверить" },
+	["Checking..."] = { "Kontrol ediliyor...", "Проверка..." },
+	["Key accepted"] = { "Key kabul edildi", "Ключ принят" },
+	["Wrong or expired key"] = { "Yanlış veya süresi dolmuş key", "Неверный или устаревший ключ" },
+
 	-- Tabs
 	["About"] = { "Hakkında", "О скрипте" },
 	["Movement"] = { "Hareket", "Движение" },
