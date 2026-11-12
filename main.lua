@@ -14,6 +14,36 @@ end
 
 local Library = fetch("ui.lua")
 if not Library then return end
+Library.Version = "2.1"
+
+-- Languages
+local Lang = fetch("lang.lua")
+if type(Lang) == "table" then Library.Dict = Lang.Dict end
+
+-- Game detection
+local list = fetch("games/list.lua")
+local entry = list and (list[game.PlaceId] or list[game.GameId])
+local gamePath, gameName
+if type(entry) == "table" then
+	gamePath, gameName = entry.file, entry.name
+elseif type(entry) == "string" then
+	gamePath = entry
+end
+if gamePath and not gameName then
+	pcall(function()
+		gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
+	end)
+end
+if gamePath then
+	local clean = tostring(gameName or "GAME")
+	clean = (clean:gsub("[^\32-\126]", ""))
+	clean = (clean:gsub("^%s+", ""))
+	clean = (clean:gsub("%s+$", ""))
+	if clean == "" then clean = "GAME" end
+	Library.GameName = string.upper(clean)
+else
+	Library.GameName = "UNIVERSAL"
+end
 
 local Window = Library.CreateWindow()
 
@@ -25,19 +55,19 @@ local function loadModule(path, tab)
 	end
 end
 
--- Tabs
+-- Tabs (About comes first, so it opens first)
+local About = Window:AddTab("About")
 local Movement = Window:AddTab("Movement")
 local ESP = Window:AddTab("ESP")
 local Misc = Window:AddTab("Misc")
 
+loadModule("modules/about.lua", About)
 loadModule("modules/movement.lua", Movement)
 loadModule("modules/fly.lua", Movement)
 loadModule("modules/esp.lua", ESP)
 loadModule("modules/misc.lua", Misc)
 
--- Game detection (adds an extra tab if this game is in the list)
-local list = fetch("games/list.lua")
-local gamePath = list and (list[game.PlaceId] or list[game.GameId])
+-- Game specific tab
 if gamePath then
 	local gameFn = fetch(gamePath)
 	if type(gameFn) == "function" then
@@ -51,9 +81,16 @@ local Settings = Window:AddTab("Settings")
 local autoSaveWanted = true
 local loaded = false
 
+Settings:Section("Language")
+Settings:Dropdown({
+	Name = "Language", Flag = "language", Global = true, Default = "English",
+	Options = (Lang and Lang.Names) or { "English" },
+	Callback = function(v) Library.SetLanguage(v) end,
+})
+
 Settings:Section("Menu")
 Settings:Dropdown({
-	Name = "Menu Key", Flag = "menu_key", Default = "RightShift",
+	Name = "Menu Key", Flag = "menu_key", Global = true, Default = "RightShift",
 	Options = { "RightShift", "Insert", "Delete", "RightControl", "RightAlt", "Home" },
 	Callback = function(v)
 		local k = Enum.KeyCode[v]
@@ -96,10 +133,11 @@ Settings:Button("Unload Hub", function()
 	Library.Unload()
 end)
 
--- Load saved config, then enable autosave
+-- Load saved config (language included), then splash and menu
 local restored = Library.Load()
 loaded = true
 Library.AutoSave = autoSaveWanted
 
+Library.Splash(2.6)
 Window:Open()
 Library.Notify("SezarHub loaded", restored and "Config restored" or "Welcome", "on", 4)
