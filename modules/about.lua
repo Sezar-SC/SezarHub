@@ -3,10 +3,10 @@ return function(Tab, Library)
 	local Players = game:GetService("Players")
 	local lp = Players.LocalPlayer
 
-	-- EDIT THESE
-	local DEVELOPER = "Sezar"
-	local LAST_UPDATE = "12.11.2026"
-	local DISCORD = "discord.gg/YOURLINK"
+	-- Values come from config.lua
+	local DEVELOPER = Library.Config.Developer or "Sezar"
+	local LAST_UPDATE = Library.Config.LastUpdate or "-"
+	local DISCORD = Library.Config.Discord or "discord.gg/YOURLINK"
 
 	local startTime = os.time()
 
