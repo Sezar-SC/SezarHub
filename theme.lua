@@ -36,7 +36,44 @@ return function(Library)
 			C(0, 240, 255), C(200, 30, 130), C(235, 250, 255), C(140, 160, 190), C(255, 60, 90), C(50, 36, 90)),
 	}
 
+	-- Optional theme pack. If it is missing, the original themes still work.
+	local PROFILE_URL = "https://raw.githubusercontent.com/Sezar-SC/SezarHub/main/theme_profiles.lua"
+	local profileData
+	local okProfiles, profileSource = pcall(function()
+		return game:HttpGet(PROFILE_URL)
+	end)
+
+	if okProfiles and type(profileSource) == "string" and loadstring then
+		local okCompile, profileChunk = pcall(loadstring, profileSource)
+		if okCompile and type(profileChunk) == "function" then
+			local okRun, result = pcall(profileChunk)
+			if okRun and type(result) == "table" then
+				profileData = result
+			end
+		end
+	end
+
+	if profileData and type(profileData.Themes) == "table" then
+		for _, extra in ipairs(profileData.Themes) do
+			if type(extra) == "table" and type(extra.name) == "string" and type(extra.c) == "table" then
+				local duplicate = false
+				for _, existing in ipairs(THEMES) do
+					if existing.name == extra.name then
+						duplicate = true
+						break
+					end
+				end
+				if not duplicate then
+					table.insert(THEMES, extra)
+				end
+			end
+		end
+	end
+
 	Library.ThemeName = "Neon Purple"
+	local initialTheme = THEMES[1]
+	Library.ThemeGradient = initialTheme.gradient
+		or ColorSequence.new(initialTheme.c.PurpleDark, initialTheme.c.Purple)
 
 	local function find(name)
 		for _, t in ipairs(THEMES) do
@@ -49,7 +86,6 @@ return function(Library)
 		return Library.VIPEnabled == true and (Library.Tier or 0) >= t.tier
 	end
 
-	-- list shown in the dropdown. VIP themes are hidden completely while VIP is shelved.
 	function Library.ThemeOptions()
 		local out = {}
 		for _, t in ipairs(THEMES) do
@@ -62,57 +98,90 @@ return function(Library)
 		return out
 	end
 
-	local function key(c)
+	local function colorKey(c)
 		return math.floor(c.R * 255 + 0.5) .. "," .. math.floor(c.G * 255 + 0.5) .. "," .. math.floor(c.B * 255 + 0.5)
 	end
+
 	local PROPS = { "BackgroundColor3", "TextColor3", "Color", "ImageColor3", "ScrollBarImageColor3" }
 
 	function Library.SetTheme(label, silent)
-		local name = (tostring(label):gsub(" %(locked%)$", ""))
+		local name = tostring(label):gsub(" %(locked%)$", "")
 		local t = find(name)
 		if not t then return false end
+
 		if not allowed(t) then
 			if not silent then Library.Notify("Theme locked", "Subscriber or VIP only", "off") end
 			return false
 		end
 		if name == Library.ThemeName then return true end
 
-		-- old color -> new color
-		local map = {}
-		for k, newc in pairs(t.c) do
-			local oldc = Theme[k]
-			if oldc then map[key(oldc)] = newc end
+		local colorMap = {}
+		for k, newColor in pairs(t.c) do
+			local oldColor = Theme[k]
+			if oldColor then colorMap[colorKey(oldColor)] = newColor end
 		end
-		for k, newc in pairs(t.c) do Theme[k] = newc end
+		for k, newColor in pairs(t.c) do Theme[k] = newColor end
+
 		Library.ThemeName = name
+		Library.ThemeGradient = t.gradient or ColorSequence.new(t.c.PurpleDark, t.c.Purple)
 
 		for _, d in ipairs(Gui:GetDescendants()) do
+			if d:IsA("UIGradient") and d.Name == "SezarThemeGradient" then
+				pcall(function() d.Color = Library.ThemeGradient end)
+			end
+
 			for _, prop in ipairs(PROPS) do
-				local ok, v = pcall(function() return d[prop] end)
-				if ok and typeof(v) == "Color3" then
-					local n = map[key(v)]
-					if n then pcall(function() d[prop] = n end) end
+				local ok, value = pcall(function() return d[prop] end)
+				if ok and typeof(value) == "Color3" then
+					local newColor = colorMap[colorKey(value)]
+					if newColor then
+						pcall(function() d[prop] = newColor end)
+					end
 				end
 			end
 		end
 
 		if Library.LogoLabel then
-			Library.LogoLabel.Text = '<font color="#000000">Sezar</font><font color="#' .. t.hub:ToHex() .. '">Hub</font>'
+			Library.LogoLabel.Text =
+				'<font color="#000000">Sezar</font><font color="#' .. t.hub:ToHex() .. '">Hub</font>'
 		end
 		return true
 	end
 
-	-- read language + theme before the key screen so it already looks right
+	function Library.ApplyKeyProfile(profile)
+		if type(profile) ~= "string" or not profileData
+			or type(profileData.KeyProfiles) ~= "table" then
+			return false
+		end
+
+		local record = profileData.KeyProfiles[profile]
+		if type(record) ~= "table" then return false end
+
+		if type(record.theme) == "string" and not Library.SetTheme(record.theme, true) then
+			return false
+		end
+		if type(record.welcome) == "string" then
+			Library.WelcomeMessage = record.welcome
+		end
+		return true
+	end
+
 	function Library.PreloadGlobals()
 		if not Library.CanSave then return end
+
 		local ok, data = pcall(function()
 			if isfile("SezarHub/global.json") then
 				return game:GetService("HttpService"):JSONDecode(readfile("SezarHub/global.json"))
 			end
 		end)
+
 		if ok and type(data) == "table" then
-			if type(data.language) == "string" and Library.Dict[data.language] then Library.SetLanguage(data.language) end
-			if type(data.theme) == "string" then Library.SetTheme(data.theme, true) end
+			if type(data.language) == "string" and Library.Dict[data.language] then
+				Library.SetLanguage(data.language)
+			end
+			if type(data.theme) == "string" then
+				Library.SetTheme(data.theme, true)
+			end
 		end
 	end
 end
