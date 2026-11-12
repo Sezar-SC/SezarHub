@@ -1,4 +1,5 @@
 -- Key screen: blocks until a valid key is entered, returns the key
+-- validate(key) must return "ok", "invalid" or "error"
 return function(Library, validate, discord)
 	local TweenService = game:GetService("TweenService")
 	local Theme, Gui, T = Library.Theme, Library.Gui, Library.T
@@ -97,13 +98,16 @@ return function(Library, validate, discord)
 		busy = true
 		status.TextColor3 = Theme.Sub
 		status.Text = T("Checking...")
-		local ok = validate(k)
+		local res = validate(k)
 		busy = false
-		if ok then
+		if res == "ok" then
 			status.TextColor3 = Theme.Purple
 			status.Text = T("Key accepted")
 			result = k
 			task.delay(0.6, function() done = true end)
+		elseif res == "error" then
+			status.TextColor3 = Theme.Off
+			status.Text = T("Could not reach key server")
 		else
 			status.TextColor3 = Theme.Off
 			status.Text = T("Wrong or expired key")
