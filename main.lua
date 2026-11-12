@@ -52,8 +52,7 @@ Library.Version = ver
 local Lang = fetch("lang.lua")
 if type(Lang) == "table" then Library.Dict = Lang.Dict end
 
--- VIP roles cannot be trusted when they come from client-downloaded files.
--- Keep VIP-only UI disabled until a server-side verifier is configured.
+-- Client-downloaded VIP roles are not trusted.
 Library.VIPEnabled = false
 Library.Tier = 0
 if Config.VIPEnabled == true then
@@ -64,7 +63,7 @@ if Config.VIPEnabled == true then
 end
 Library.Role = (Library.Tier == 2 and "VIP") or (Library.Tier == 1 and "Subscriber") or "Free"
 
--- Theme manager + saved language/theme (before the key screen)
+-- Theme manager + saved language/theme
 local themeFn = fetch("theme.lua")
 if type(themeFn) == "function" then
 	local ok, err = pcall(themeFn, Library)
@@ -85,6 +84,7 @@ local function readSaved(path)
 	end)
 	return ok and res or nil
 end
+
 local function writeSaved(path, text)
 	if not Library.CanSave then return end
 	pcall(function()
@@ -93,11 +93,11 @@ local function writeSaved(path, text)
 	end)
 end
 
--- ========== KEY CHECK (Cloudflare Worker, POST body, fail-closed) ==========
+-- Key check: Cloudflare Worker, POST body, fail closed
 local HttpService = game:GetService("HttpService")
 local requestFn = (syn and syn.request) or (http and http.request) or http_request or request
 
--- returns "ok" | "invalid" | "error"
+-- Returns "ok", "invalid", or "error".
 local function checkKey(key)
 	if type(key) ~= "string" then return "invalid" end
 	key = key:gsub("%s+", "")
@@ -113,9 +113,20 @@ local function checkKey(key)
 	if not ok or type(res) ~= "table" then return "error" end
 	if res.StatusCode ~= 200 then return "error" end
 
-	local okJson, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+	local okJson, data = pcall(function()
+		return HttpService:JSONDecode(res.Body)
+	end)
 	if not okJson or type(data) ~= "table" then return "error" end
-	if data.valid == true then return "ok" end
+
+	if data.valid == true then
+		Library.KeyProfile =
+			(type(data.profile) == "string" and #data.profile <= 48)
+			and data.profile
+			or nil
+		return "ok"
+	end
+
+	Library.KeyProfile = nil
 	if data.valid == false then return "invalid" end
 	return "error"
 end
@@ -123,6 +134,7 @@ end
 if Config.KeyEnabled ~= false then
 	local saved = readSaved("SezarHub/key.txt")
 	local status = "invalid"
+
 	if saved and saved:gsub("%s+", "") ~= "" then
 		status = checkKey(saved)
 		if status == "error" then
@@ -137,6 +149,7 @@ if Config.KeyEnabled ~= false then
 			stopStartup("Key screen could not be loaded. Access is blocked.")
 			return
 		end
+
 		local okScreen, entered = pcall(screen, Library, checkKey, Config.Discord)
 		if not okScreen or type(entered) ~= "string" or entered == "" then
 			stopStartup("A valid key is required to continue.")
@@ -146,25 +159,36 @@ if Config.KeyEnabled ~= false then
 	end
 end
 
+-- Apply a known visual profile returned by the Worker.
+if Library.KeyProfile and Library.ApplyKeyProfile then
+	local okProfile, applied = pcall(Library.ApplyKeyProfile, Library.KeyProfile)
+	if not okProfile or not applied then
+		warn("[SezarHub] Unknown visual key profile; default theme will be used")
+	end
+end
+
 -- Game detection
 local list = fetch("games/list.lua")
 local entry = list and (list[game.PlaceId] or list[game.GameId])
 local gamePath, gameName
+
 if type(entry) == "table" then
 	gamePath, gameName = entry.file, entry.name
 elseif type(entry) == "string" then
 	gamePath = entry
 end
+
 if gamePath and not gameName then
 	pcall(function()
 		gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
 	end)
 end
+
 if gamePath then
 	local clean = tostring(gameName or "GAME")
-	clean = (clean:gsub("[^\32-\126]", ""))
-	clean = (clean:gsub("^%s+", ""))
-	clean = (clean:gsub("%s+$", ""))
+	clean = clean:gsub("[^\32-\126]", "")
+	clean = clean:gsub("^%s+", "")
+	clean = clean:gsub("%s+$", "")
 	if clean == "" then clean = "GAME" end
 	Library.GameName = string.upper(clean)
 else
@@ -227,7 +251,9 @@ Settings:Section("Theme")
 local themeDD
 themeDD = Settings:Dropdown({
 	Name = "Theme", Flag = "theme", Global = true, Default = Library.ThemeName,
-	Options = function() return Library.ThemeOptions and Library.ThemeOptions() or { "Neon Purple" } end,
+	Options = function()
+		return Library.ThemeOptions and Library.ThemeOptions() or { "Neon Purple" }
+	end,
 	Callback = function(v)
 		if Library.SetTheme and not Library.SetTheme(v) and themeDD then
 			themeDD.Set(Library.ThemeName)
@@ -247,10 +273,15 @@ Settings:Dropdown({
 
 Settings:Section("Config")
 Settings:Label(Library.CanSave and "Config saving: supported" or "Config saving: not supported by this executor")
-Settings:Toggle({ Name = "Auto Save", Default = true, NoKey = true, Callback = function(v)
-	autoSaveWanted = v
-	if loaded then Library.AutoSave = v end
-end })
+Settings:Toggle({
+	Name = "Auto Save",
+	Default = true,
+	NoKey = true,
+	Callback = function(v)
+		autoSaveWanted = v
+		if loaded then Library.AutoSave = v end
+	end,
+})
 Settings:Button("Save Config Now", function()
 	if Library.Save() then
 		Library.Notify("Config saved", "Settings written to file", "on")
@@ -281,18 +312,18 @@ Settings:Button("Unload Hub", function()
 	Library.Unload()
 end)
 
--- Load saved config, then splash and menu
+-- Restore config, then show splash and menu.
 local restored = Library.Load()
 loaded = true
 Library.AutoSave = autoSaveWanted
 
-Library.Splash(2.6)
+Library.Splash(2.6, Library.WelcomeMessage)
 Window:Open()
 Library.Notify("SezarHub loaded", restored and "Config restored" or "Welcome", "on", 4)
 
--- Update notice (only when the version changed since the last run)
+-- Update notice
 local lastSeen = readSaved("SezarHub/lastver.txt")
-local lastClean = lastSeen and (lastSeen:gsub("%s+", "")) or nil
+local lastClean = lastSeen and lastSeen:gsub("%s+", "") or nil
 if lastClean ~= ver then
 	writeSaved("SezarHub/lastver.txt", ver)
 	if lastClean then
