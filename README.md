@@ -7,7 +7,6 @@ SezarHub is a Lua project organized around a loader, a UI library, reusable modu
 - `main.lua` starts the client, loads configuration and language/theme data, checks the key, creates tabs, and loads modules.
 - `ui.lua` contains the UI library and shared notification/configuration helpers.
 - `config.lua` contains public feature settings. Never put passwords, GitHub tokens, API secrets, or private keys here.
-- `keys.lua` contains the current client-side key list. This file is public and downloaded by every client. It cannot keep keys secret or provide strong access control. Use a server-side verification service before treating keys as security credentials.
 - `keyscreen.lua` displays the existing key-entry screen.
 - `vip.lua` is a legacy client-side role list. It is not trusted for authorization. VIP stays disabled until a server-side verifier is implemented.
 - `lang.lua` contains translations; `theme.lua` contains theme behavior.
