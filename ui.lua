@@ -1,4 +1,4 @@
--- SezarHub UI library v2
+-- SezarHub UI library v2.1
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -6,8 +6,9 @@ local Debris = game:GetService("Debris")
 local HttpService = game:GetService("HttpService")
 
 local Library = {
-	_conns = {}, OnUnload = {}, ToggleKey = Enum.KeyCode.RightShift,
-	Flags = {}, Setters = {}, Binding = false, AutoSave = false, Loading = false,
+	_conns = {}, _tr = {}, OnUnload = {}, ToggleKey = Enum.KeyCode.RightShift,
+	Flags = {}, GFlags = {}, Setters = {}, Binding = false, AutoSave = false, Loading = false,
+	Lang = "English", Dict = {}, Version = "2.1", GameName = "UNIVERSAL",
 }
 
 local Theme = {
@@ -47,6 +48,56 @@ function Library.Connect(signal, fn)
 	return c
 end
 
+-- ========== LANGUAGE ==========
+function Library.T(s)
+	s = tostring(s)
+	if Library.Lang == "English" then return s end
+	local d = Library.Dict[Library.Lang]
+	return (d and d[s]) or s
+end
+
+local FALLBACK = {
+	[Enum.Font.GothamBold] = Enum.Font.SourceSansBold,
+	[Enum.Font.GothamBlack] = Enum.Font.SourceSansBold,
+	[Enum.Font.GothamMedium] = Enum.Font.SourceSansSemibold,
+	[Enum.Font.Gotham] = Enum.Font.SourceSans,
+}
+local function fontFor(f)
+	if Library.Lang == "English" then return f end
+	return FALLBACK[f] or f
+end
+local function sizeFor(s)
+	if Library.Lang == "English" then return s end
+	return math.floor(s * 1.12 + 0.5)
+end
+
+local function refresh(r)
+	local txt = Library.T(r.key)
+	if r.value ~= nil then txt = txt .. ": " .. tostring(r.value) end
+	if r.upper and Library.Lang == "English" then txt = string.upper(txt) end
+	r.obj.Text = txt
+	r.obj.Font = fontFor(r.font)
+	r.obj.TextSize = sizeFor(r.size)
+end
+
+local function reg(obj, key, opts)
+	local r = { obj = obj, key = key, font = obj.Font, size = obj.TextSize }
+	if opts then r.upper = opts.upper; r.value = opts.value end
+	table.insert(Library._tr, r)
+	refresh(r)
+	return r
+end
+
+function Library.SetLanguage(l)
+	if l == Library.Lang then return end
+	Library.Lang = l
+	for i = #Library._tr, 1, -1 do
+		local r = Library._tr[i]
+		if r.obj.Parent then refresh(r) else table.remove(Library._tr, i) end
+	end
+end
+
+-- ========== GUI ROOT ==========
 local function getParent()
 	local ok, ui = pcall(function() return gethui and gethui() end)
 	if ok and ui then return ui end
@@ -67,9 +118,10 @@ local Gui = create("ScreenGui", {
 pcall(function() if syn and syn.protect_gui then syn.protect_gui(Gui) end end)
 Gui.Parent = parent
 
--- ========== CONFIG (save / load) ==========
+-- ========== CONFIG (per game + global) ==========
 local CFG_FOLDER = "SezarHub"
 local CFG_FILE = CFG_FOLDER .. "/" .. tostring(game.PlaceId) .. ".json"
+local GLOBAL_FILE = CFG_FOLDER .. "/global.json"
 Library.CanSave = (type(writefile) == "function" and type(readfile) == "function"
 	and type(isfile) == "function" and type(makefolder) == "function" and type(isfolder) == "function")
 
@@ -78,6 +130,7 @@ function Library.Save()
 	local ok = pcall(function()
 		if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end
 		writefile(CFG_FILE, HttpService:JSONEncode(Library.Flags))
+		writefile(GLOBAL_FILE, HttpService:JSONEncode(Library.GFlags))
 	end)
 	return ok
 end
@@ -94,18 +147,23 @@ end
 
 function Library.Load()
 	if not Library.CanSave then return false end
-	local ok, data = pcall(function()
-		if not isfile(CFG_FILE) then return nil end
-		return HttpService:JSONDecode(readfile(CFG_FILE))
-	end)
-	if not ok or type(data) ~= "table" then return false end
+	local any = false
 	Library.Loading = true
-	for flag, value in pairs(data) do
-		local setter = Library.Setters[flag]
-		if setter then pcall(setter, value) end
+	for _, path in ipairs({ GLOBAL_FILE, CFG_FILE }) do
+		local ok, data = pcall(function()
+			if not isfile(path) then return nil end
+			return HttpService:JSONDecode(readfile(path))
+		end)
+		if ok and type(data) == "table" then
+			any = true
+			for flag, value in pairs(data) do
+				local setter = Library.Setters[flag]
+				if setter then pcall(setter, value) end
+			end
+		end
 	end
 	Library.Loading = false
-	return true
+	return any
 end
 
 -- ========== NOTIFICATIONS (top right) ==========
@@ -135,13 +193,15 @@ function Library.Notify(title, sub, kind, dur)
 	create("Frame", { BackgroundColor3 = col, Size = UDim2.new(0, 4, 1, 0), BorderSizePixel = 0 }, card)
 	create("TextLabel", {
 		BackgroundTransparency = 1, Position = UDim2.new(0, 16, 0, 8), Size = UDim2.new(1, -24, 0, 18),
-		Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Theme.Text,
-		TextXAlignment = Enum.TextXAlignment.Left, Text = tostring(title),
+		Font = fontFor(Enum.Font.GothamBold), TextSize = sizeFor(15), TextColor3 = Theme.Text,
+		TextXAlignment = Enum.TextXAlignment.Left, Text = Library.T(title),
+		TextTruncate = Enum.TextTruncate.AtEnd,
 	}, card)
 	create("TextLabel", {
 		BackgroundTransparency = 1, Position = UDim2.new(0, 16, 0, 27), Size = UDim2.new(1, -24, 0, 16),
-		Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = Theme.Sub,
-		TextXAlignment = Enum.TextXAlignment.Left, Text = tostring(sub or "SezarHub"),
+		Font = fontFor(Enum.Font.Gotham), TextSize = sizeFor(12), TextColor3 = Theme.Sub,
+		TextXAlignment = Enum.TextXAlignment.Left, Text = Library.T(sub or "SezarHub"),
+		TextTruncate = Enum.TextTruncate.AtEnd,
 	}, card)
 	local bar = create("Frame", {
 		BackgroundColor3 = col, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0),
@@ -158,11 +218,12 @@ function Library.Notify(title, sub, kind, dur)
 end
 
 -- ========== EFFECTS ==========
-local function burst(center, W, H)
+local function burst(center, W, H, host)
+	host = host or Gui
 	local ring = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(center.X, center.Y),
 		Size = UDim2.fromOffset(120, 120), BackgroundTransparency = 1, ZIndex = 40,
-	}, Gui)
+	}, host)
 	corner(ring, 600)
 	local rs = stroke(ring, Theme.Purple, 4)
 	tween(ring, 0.8, { Size = UDim2.fromOffset(1000, 1000) })
@@ -186,7 +247,7 @@ local function burst(center, W, H)
 			BackgroundColor3 = (i % 3 == 0) and Color3.new(1, 1, 1) or Theme.Purple,
 			Size = UDim2.fromOffset(s, s), Rotation = math.random(0, 90),
 			Position = UDim2.fromOffset(center.X + px, center.Y + py),
-		}, Gui)
+		}, host)
 		corner(p, 2)
 		tween(p, math.random(60, 110) / 100, {
 			Position = UDim2.fromOffset(center.X + px + dir.X * dist, center.Y + py + dir.Y * dist),
@@ -210,12 +271,97 @@ local function popIn(page, startScale)
 	end
 end
 
+-- ========== WELCOME SPLASH ==========
+function Library.Splash(duration)
+	duration = duration or 2.6
+	local overlay = create("Frame", {
+		Name = "Splash", Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(6, 4, 12),
+		BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 200, Active = true,
+	}, Gui)
+
+	pcall(function()
+		local vx = Gui.AbsoluteSize.X
+		if vx <= 0 then vx = 1280 end
+		local box = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0),
+			Size = UDim2.fromOffset(760, 230), BackgroundTransparency = 1,
+		}, overlay)
+		create("UIScale", { Scale = math.clamp(vx / 800, 0.45, 1) }, box)
+
+		local welcome = create("TextLabel", {
+			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), Font = Enum.Font.GothamBold,
+			TextSize = 24, TextColor3 = Theme.Purple, TextTransparency = 1, Text = "",
+		}, box)
+		local wr = reg(welcome, "WELCOME")
+		table.remove(Library._tr, #Library._tr) -- splash label is temporary
+
+		local row = create("Frame", {
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 40), Size = UDim2.new(1, 0, 0, 100),
+		}, box)
+		create("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder,
+		}, row)
+
+		local word = "SEZARHUB"
+		local letters = {}
+		for i = 1, #word do
+			local l = create("TextLabel", {
+				BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 100), AutomaticSize = Enum.AutomaticSize.X,
+				Font = Enum.Font.GothamBlack, TextSize = 84, Text = word:sub(i, i), LayoutOrder = i,
+				TextColor3 = (i <= 5) and Color3.new(1, 1, 1) or Theme.Purple, TextTransparency = 1,
+			}, row)
+			local s = create("UIScale", { Scale = 0 }, l)
+			letters[i] = { l, s }
+		end
+
+		local line = create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 152),
+			Size = UDim2.fromOffset(0, 3), BackgroundColor3 = Theme.Purple, BorderSizePixel = 0,
+		}, box)
+		corner(line, 2)
+
+		local sub = create("TextLabel", {
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 168), Size = UDim2.new(1, 0, 0, 24),
+			Font = fontFor(Enum.Font.GothamMedium), TextSize = sizeFor(15), TextColor3 = Theme.Sub, TextTransparency = 1,
+			Text = Library.T("Developer") .. ": Sezar   |   v" .. Library.Version,
+		}, box)
+
+		tween(overlay, 0.4, { BackgroundTransparency = 0.05 }, Enum.EasingStyle.Quad)
+		tween(welcome, 0.5, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
+		for i, pair in ipairs(letters) do
+			task.delay(0.25 + i * 0.08, function()
+				tween(pair[2], 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
+				tween(pair[1], 0.3, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
+			end)
+		end
+		task.delay(0.6, function()
+			local c = Vector2.new(Gui.AbsoluteSize.X / 2, Gui.AbsoluteSize.Y / 2)
+			pcall(burst, c, 520, 110, overlay)
+		end)
+		task.delay(0.95, function() tween(line, 0.6, { Size = UDim2.fromOffset(480, 3) }, Enum.EasingStyle.Quart) end)
+		task.delay(1.2, function() tween(sub, 0.5, { TextTransparency = 0 }, Enum.EasingStyle.Quad) end)
+
+		task.wait(duration)
+
+		for _, d in ipairs(overlay:GetDescendants()) do
+			if d:IsA("TextLabel") then tween(d, 0.45, { TextTransparency = 1 }, Enum.EasingStyle.Quad)
+			elseif d:IsA("Frame") then tween(d, 0.45, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quad) end
+		end
+		for _, pair in ipairs(letters) do tween(pair[2], 0.45, { Scale = 1.3 }, Enum.EasingStyle.Quad) end
+		tween(overlay, 0.5, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quad)
+		task.wait(0.55)
+	end)
+	overlay:Destroy()
+end
+
 -- ========== WINDOW ==========
 function Library.CreateWindow()
 	local W, H = 660, 430
 	local Window = {}
 	local tabs, current = {}, nil
 	local isOpen = false
+	local firstOpen = true
 
 	local Main = create("Frame", {
 		Name = "Main", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0),
@@ -245,9 +391,10 @@ function Library.CreateWindow()
 		Text = '<font color="#000000">Sezar</font><font color="#9646FF">Hub</font>',
 	}, plate)
 	create("TextLabel", {
-		BackgroundTransparency = 1, Position = UDim2.fromOffset(128, 0), Size = UDim2.new(0, 120, 1, 0),
-		Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = Theme.Sub,
-		TextXAlignment = Enum.TextXAlignment.Left, Text = "v2.0",
+		BackgroundTransparency = 1, Position = UDim2.fromOffset(128, 0), Size = UDim2.new(1, -190, 1, 0),
+		Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = Theme.Sub,
+		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "v" .. Library.Version .. "  |  " .. Library.GameName,
 	}, Header)
 
 	local Close = create("TextButton", {
@@ -331,31 +478,40 @@ function Library.CreateWindow()
 
 	function Tab:Section(text)
 		local f = item(self, 24, true)
-		create("TextLabel", {
+		local l = create("TextLabel", {
 			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.GothamBold,
-			TextSize = 12, TextColor3 = Theme.Purple, TextXAlignment = Enum.TextXAlignment.Left,
-			Text = string.upper(text),
+			TextSize = 12, TextColor3 = Theme.Purple, TextXAlignment = Enum.TextXAlignment.Left, Text = text,
 		}, f)
+		reg(l, text, { upper = true })
 	end
 
-	function Tab:Label(text)
+	-- Label(text)  or  Label(key, value) -> "key: value"
+	function Tab:Label(text, value)
 		local f = item(self, 30, true)
+		f.AutomaticSize = Enum.AutomaticSize.Y
+		f.Size = UDim2.new(1, 0, 0, 0)
 		local l = create("TextLabel", {
-			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.Gotham,
-			TextSize = 13, TextColor3 = Theme.Sub, TextXAlignment = Enum.TextXAlignment.Left,
-			TextWrapped = true, Text = text,
+			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+			Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = Theme.Sub,
+			TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true, Text = text,
 		}, f)
-		return { Set = function(t) l.Text = t end }
+		local hasValue = value ~= nil
+		local r = reg(l, text, { value = value })
+		return { Set = function(v)
+			if hasValue then r.value = v else r.key = tostring(v) end
+			refresh(r)
+		end }
 	end
 
 	-- Toggle: {Name, Default, Flag, Key (Enum.KeyCode), NoKey, Callback}
 	function Tab:Toggle(o)
 		local f = item(self, 42)
-		create("TextLabel", {
+		local nameLbl = create("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -150, 1, 0),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left, Text = o.Name,
+			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = o.Name,
 		}, f)
+		reg(nameLbl, o.Name)
 		local sw = create("Frame", {
 			AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0),
 			Size = UDim2.fromOffset(46, 24), BackgroundColor3 = Theme.SwitchOff, BorderSizePixel = 0,
@@ -382,7 +538,12 @@ function Library.CreateWindow()
 			if o.Flag then Library.Flags[o.Flag] = state; queueSave() end
 			visual(state)
 			if not silent then
-				Library.Notify(o.Name .. (state and " enabled" or " disabled"), state and "Feature active" or "Feature inactive", state and "on" or "off")
+				local T = Library.T
+				Library.Notify(
+					T(o.Name) .. " " .. T(state and "enabled" or "disabled"),
+					T(state and "Feature active" or "Feature inactive"),
+					state and "on" or "off"
+				)
 			end
 			safe(o.Callback, state)
 		end
@@ -420,7 +581,7 @@ function Library.CreateWindow()
 							setKey("None")
 						else
 							setKey(i.KeyCode.Name)
-							Library.Notify("Keybind set", o.Name .. " = " .. i.KeyCode.Name, "on", 2)
+							Library.Notify("Keybind set", Library.T(o.Name) .. " = " .. i.KeyCode.Name, "on", 2)
 						end
 						task.delay(0.15, function() Library.Binding = false end)
 					end
@@ -452,11 +613,12 @@ function Library.CreateWindow()
 		local min, max = o.Min, o.Max
 		local hardMax = o.HardMax or max
 		local f = item(self, 60)
-		create("TextLabel", {
+		local nameLbl = create("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -110, 0, 22),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left, Text = o.Name,
+			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = o.Name,
 		}, f)
+		reg(nameLbl, o.Name)
 		local box = create("TextBox", {
 			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 6), Size = UDim2.fromOffset(70, 24),
 			BackgroundColor3 = Theme.Panel, Text = tostring(o.Default), TextColor3 = Theme.Text,
@@ -496,6 +658,10 @@ function Library.CreateWindow()
 			end
 		end
 
+		local function announce()
+			Library.Notify(Library.T(o.Name) .. ": " .. value, "Value updated", "on", 2)
+		end
+
 		local sliding = false
 		local function fromInput(x)
 			local a = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
@@ -515,14 +681,14 @@ function Library.CreateWindow()
 		Library.Connect(UIS.InputEnded, function(i)
 			if sliding and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
 				sliding = false
-				Library.Notify(o.Name .. ": " .. value, "Value updated", "on", 2)
+				announce()
 			end
 		end)
 		box.FocusLost:Connect(function()
 			local n = tonumber(box.Text)
 			if n then
 				setValue(n, true)
-				Library.Notify(o.Name .. ": " .. value, "Value updated", "on", 2)
+				announce()
 			else
 				box.Text = tostring(value)
 			end
@@ -530,15 +696,17 @@ function Library.CreateWindow()
 		return { Set = function(v) setValue(v, true) end }
 	end
 
-	-- Dropdown: {Name, Options (table or function), Default, Flag, Callback}
+	-- Dropdown: {Name, Options (table or function), Default, Flag, Global, Callback}
 	function Tab:Dropdown(o)
+		local store = o.Global and Library.GFlags or Library.Flags
 		local f = item(self, 42)
 		f.ClipsDescendants = true
-		create("TextLabel", {
+		local nameLbl = create("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -190, 0, 42),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
-			TextXAlignment = Enum.TextXAlignment.Left, Text = o.Name,
+			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = o.Name,
 		}, f)
+		reg(nameLbl, o.Name)
 		local sel = create("TextButton", {
 			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 9), Size = UDim2.fromOffset(150, 24),
 			BackgroundColor3 = Theme.Panel, Text = "", AutoButtonColor = false,
@@ -547,7 +715,7 @@ function Library.CreateWindow()
 		stroke(sel, Theme.PurpleDark, 1)
 		local selText = create("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -28, 1, 0),
-			Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = Theme.Text,
+			Font = Enum.Font.SourceSansSemibold, TextSize = 15, TextColor3 = Theme.Text,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = "None",
 		}, sel)
 		local arrow = create("TextLabel", {
@@ -571,9 +739,9 @@ function Library.CreateWindow()
 		local function setValue(v, silent)
 			value = v
 			selText.Text = tostring(v == nil and "None" or v)
-			if o.Flag then Library.Flags[o.Flag] = v; queueSave() end
+			if o.Flag then store[o.Flag] = v; queueSave() end
 			if not silent and v ~= nil then
-				Library.Notify(o.Name .. ": " .. tostring(v), "Selected", "on", 2)
+				Library.Notify(Library.T(o.Name) .. ": " .. tostring(v), "Selected", "on", 2)
 			end
 			if v ~= nil then safe(o.Callback, v) end
 		end
@@ -588,7 +756,7 @@ function Library.CreateWindow()
 			for idx, name in ipairs(opts) do
 				local b = create("TextButton", {
 					Size = UDim2.new(1, -8, 0, 26), BackgroundColor3 = Theme.Item, Text = tostring(name),
-					Font = Enum.Font.GothamMedium, TextSize = 13, AutoButtonColor = false, LayoutOrder = idx,
+					Font = Enum.Font.SourceSansSemibold, TextSize = 15, AutoButtonColor = false, LayoutOrder = idx,
 					TextColor3 = (name == value) and Theme.Purple or Theme.Text,
 				}, list)
 				corner(b, 6)
@@ -620,7 +788,7 @@ function Library.CreateWindow()
 		end)
 
 		if o.Flag then
-			Library.Flags[o.Flag] = value
+			store[o.Flag] = value
 			Library.Setters[o.Flag] = function(v) setValue(v, true) end
 		end
 		if value ~= nil then setValue(value, true) end
@@ -633,6 +801,7 @@ function Library.CreateWindow()
 			Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = text,
 			Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Theme.Purple, AutoButtonColor = false,
 		}, f)
+		reg(btn, text)
 		btn.MouseEnter:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.PurpleDark }); tween(btn, 0.15, { TextColor3 = Color3.new(1, 1, 1) }) end)
 		btn.MouseLeave:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.Item }); tween(btn, 0.15, { TextColor3 = Theme.Purple }) end)
 		btn.MouseButton1Click:Connect(function()
@@ -647,9 +816,10 @@ function Library.CreateWindow()
 		local t = setmetatable({ Order = 0 }, Tab)
 		t.Btn = create("TextButton", {
 			Text = name, Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Theme.Sub,
-			BackgroundTransparency = 1, Size = UDim2.new(0, 110, 1, 0),
-			AutoButtonColor = false, LayoutOrder = #tabs + 1,
+			BackgroundTransparency = 1, Size = UDim2.new(0, 96, 1, 0),
+			AutoButtonColor = false, LayoutOrder = #tabs + 1, TextTruncate = Enum.TextTruncate.AtEnd,
 		}, TabBar)
+		reg(t.Btn, name)
 		create("UIScale", { Name = "S" }, t.Btn)
 		t.Line = create("Frame", {
 			BackgroundColor3 = Theme.Purple, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -2),
@@ -675,32 +845,38 @@ function Library.CreateWindow()
 		if isOpen then return end
 		isOpen = true
 		Main.Visible = true
-		Scale.Scale = 0
-		tween(Scale, 0.65, { Scale = 1 }, Enum.EasingStyle.Back)
-		MainStroke.Color = Color3.new(1, 1, 1)
-		tween(MainStroke, 0.8, { Color = Theme.Purple })
-		local c = Vector2.new(
-			Gui.AbsoluteSize.X * Main.Position.X.Scale + Main.Position.X.Offset,
-			Gui.AbsoluteSize.Y * Main.Position.Y.Scale + Main.Position.Y.Offset
-		)
-		task.spawn(function() pcall(burst, c, W, H) end)
-		for i, t in ipairs(tabs) do
-			local s = t.Btn.S
-			s.Scale = 0
-			task.delay(0.25 + i * 0.07, function() tween(s, 0.45, { Scale = 1 }, Enum.EasingStyle.Back) end)
-		end
-		if current then
-			task.delay(0.35, function() popIn(current.Page, 0.6) end)
-		elseif tabs[1] then
-			task.delay(0.3, function() selectTab(tabs[1]) end)
+		if firstOpen then
+			-- full show only the very first time
+			firstOpen = false
+			Scale.Scale = 0
+			tween(Scale, 0.65, { Scale = 1 }, Enum.EasingStyle.Back)
+			MainStroke.Color = Color3.new(1, 1, 1)
+			tween(MainStroke, 0.8, { Color = Theme.Purple })
+			local c = Vector2.new(
+				Gui.AbsoluteSize.X * Main.Position.X.Scale + Main.Position.X.Offset,
+				Gui.AbsoluteSize.Y * Main.Position.Y.Scale + Main.Position.Y.Offset
+			)
+			task.spawn(function() pcall(burst, c, W, H) end)
+			for i, t in ipairs(tabs) do
+				local s = t.Btn.S
+				s.Scale = 0
+				task.delay(0.25 + i * 0.07, function() tween(s, 0.45, { Scale = 1 }, Enum.EasingStyle.Back) end)
+			end
+			if tabs[1] then
+				task.delay(0.3, function() selectTab(tabs[1]) end)
+			end
+		else
+			-- light toggle (RightShift): no particles, no pop-ins
+			Scale.Scale = 0.9
+			tween(Scale, 0.18, { Scale = 1 }, Enum.EasingStyle.Quad)
 		end
 	end
 
 	function Window:Hide()
 		if not isOpen then return end
 		isOpen = false
-		tween(Scale, 0.3, { Scale = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.In)
-		task.delay(0.32, function() if not isOpen then Main.Visible = false end end)
+		tween(Scale, 0.15, { Scale = 0.9 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.delay(0.16, function() if not isOpen then Main.Visible = false end end)
 	end
 
 	function Window:Toggle()
@@ -709,7 +885,7 @@ function Library.CreateWindow()
 
 	Close.MouseButton1Click:Connect(function()
 		Window:Hide()
-		Library.Notify("Menu hidden", "Press " .. Library.ToggleKey.Name .. " to open", "off")
+		Library.Notify("Menu hidden", Library.T("Key") .. ": " .. Library.ToggleKey.Name, "off")
 	end)
 	Library.Connect(UIS.InputBegan, function(i, gp)
 		if not gp and not Library.Binding and i.KeyCode == Library.ToggleKey then Window:Toggle() end
