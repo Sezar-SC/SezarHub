@@ -1,5 +1,6 @@
--- SezarHub loader v2.3
+-- SezarHub loader v2.4
 local BASE = "https://raw.githubusercontent.com/Sezar-SC/SezarHub/main/"
+local VERIFY_URL = "https://sezarhub-key-check.sehladarcalilov.workers.dev/verify"
 
 local function fetchText(path)
 	local ok, res = pcall(function() return game:HttpGet(BASE .. path) end)
@@ -25,7 +26,9 @@ if not Library then return end
 local function stopStartup(message)
 	warn("[SezarHub] " .. message)
 	if Library.Notify then pcall(Library.Notify, "Startup failed", message, "off", 6) end
-	return
+	task.delay(6.5, function()
+		if Library.Unload then pcall(Library.Unload) end
+	end)
 end
 
 -- Config + version
@@ -37,7 +40,7 @@ end
 Library.Config = Config
 Config.Discord = Config.Discord or "discord.gg/YOURLINK"
 
-local ver, notes = "2.2", ""
+local ver, notes = "2.4.0", ""
 local verText = fetchText("version.txt")
 if verText then
 	ver = verText:match("^%s*(%S+)") or ver
@@ -90,37 +93,52 @@ local function writeSaved(path, text)
 	end)
 end
 
--- Key gate. Any missing or invalid dependency stops startup.
+-- ========== KEY CHECK (Cloudflare Worker, POST body, fail-closed) ==========
+local HttpService = game:GetService("HttpService")
+local requestFn = (syn and syn.request) or (http and http.request) or http_request or request
+
+-- returns "ok" | "invalid" | "error"
+local function checkKey(key)
+	if type(key) ~= "string" then return "invalid" end
+	key = key:gsub("%s+", "")
+	if key == "" or #key > 128 then return "invalid" end
+	if type(requestFn) ~= "function" then return "error" end
+
+	local ok, res = pcall(requestFn, {
+		Url = VERIFY_URL,
+		Method = "POST",
+		Headers = { ["Content-Type"] = "application/json" },
+		Body = HttpService:JSONEncode({ key = key }),
+	})
+	if not ok or type(res) ~= "table" then return "error" end
+	if res.StatusCode ~= 200 then return "error" end
+
+	local okJson, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+	if not okJson or type(data) ~= "table" then return "error" end
+	if data.valid == true then return "ok" end
+	if data.valid == false then return "invalid" end
+	return "error"
+end
+
 if Config.KeyEnabled ~= false then
-	local keys = fetch("keys.lua")
-	local list = type(keys) == "table" and keys.Keys
-	if type(list) ~= "table" or #list == 0 then
-		stopStartup("Key verification is unavailable. Access is blocked.")
-		return
-	end
-
-	local function norm(value)
-		if type(value) ~= "string" then return "" end
-		return (value:gsub("%s+", "")):upper()
-	end
-	local function valid(key)
-		key = norm(key)
-		if key == "" then return false end
-		for _, value in ipairs(list) do
-			if norm(value) ~= "" and norm(value) == key then return true end
-		end
-		return false
-	end
-
 	local saved = readSaved("SezarHub/key.txt")
-	if not (saved and valid(saved)) then
+	local status = "invalid"
+	if saved and saved:gsub("%s+", "") ~= "" then
+		status = checkKey(saved)
+		if status == "error" then
+			stopStartup("Could not reach key server. Access is blocked.")
+			return
+		end
+	end
+
+	if status ~= "ok" then
 		local screen = fetch("keyscreen.lua")
 		if type(screen) ~= "function" then
 			stopStartup("Key screen could not be loaded. Access is blocked.")
 			return
 		end
-		local ok, entered = pcall(screen, Library, valid, Config.Discord)
-		if not ok or not valid(entered) then
+		local okScreen, entered = pcall(screen, Library, checkKey, Config.Discord)
+		if not okScreen or type(entered) ~= "string" or entered == "" then
 			stopStartup("A valid key is required to continue.")
 			return
 		end
