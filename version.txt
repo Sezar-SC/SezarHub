@@ -1,2 +1,2 @@
-2.3.0
-Key failures now stop startup; VIP remains disabled without server verification
+2.4.0
+Key check moved to a secure server
