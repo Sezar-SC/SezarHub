@@ -67,6 +67,15 @@ local TR = {
 	["ESP Color"] = { "ESP Rengi", "Цвет ESP" },
 	["Max Distance"] = { "Maks. Mesafe", "Макс. дистанция" },
 
+	-- MM2
+	["Role ESP"] = { "Rol ESP", "ESP ролей" },
+	["Show Innocents"] = { "Masumlar\u{131} G\u{F6}ster", "Показывать невиновных" },
+	["GunDrop ESP"] = { "D\u{FC}\u{15F}en Silah ESP", "ESP упавшего пистолета" },
+	["Actions"] = { "Eylemler", "Действия" },
+	["Grab Gun"] = { "Silah\u{131} Al", "Взять пистолет" },
+	["Gun not found"] = { "Silah bulunamad\u{131}", "Пистолет не найден" },
+	["Grab failed"] = { "Alma ba\u{15F}ar\u{131}s\u{131}z", "Не удалось взять" },
+
 	-- Misc
 	["Anti-AFK"] = { "Anti-AFK", "Анти-АФК" },
 	["Fullbright"] = { "Tam Parlaklık", "Полная яркость" },
