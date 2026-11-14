@@ -1,4 +1,4 @@
--- MM2 game tab v2
+-- MM2 game tab v3
 return function(Window, Library)
 	local Players = game:GetService("Players")
 	local RunService = game:GetService("RunService")
@@ -9,7 +9,8 @@ return function(Window, Library)
 
 	local S = {
 		Roles = false, Innocent = true, Gun = false, Coin = false,
-		Farm = false, Avoid = true, BagLobby = true, AutoGun = false, AutoShoot = false,
+		Farm = false, Avoid = true, BagLobby = true, AutoGun = false,
+		AutoShoot = false, ShootFull = false, Kill = false, KillFull = false,
 	}
 	local COL = {
 		Murderer = Color3.fromRGB(255, 60, 60),
@@ -23,6 +24,7 @@ return function(Window, Library)
 	holder.Parent = Library.GuiParent
 
 	local cache, gunObj = {}, nil
+	local grabbing, killing = false, false
 
 	local function has(c, n)
 		return c ~= nil and c:FindFirstChild(n) ~= nil
@@ -138,7 +140,7 @@ return function(Window, Library)
 		end
 	end
 
-	-- coins
+	-- coin ESP
 	local coins, coinCont, lastFind = {}, nil, 0
 
 	local function clearCoins()
@@ -209,6 +211,16 @@ return function(Window, Library)
 		return nil
 	end
 
+	local function inLobby(root)
+		local lobby = workspace:FindFirstChild("Lobby")
+		if not lobby or not root then return false end
+		local ok, cf, size = pcall(function() return lobby:GetBoundingBox() end)
+		if not ok or not cf then return false end
+		local rel = cf:PointToObjectSpace(root.Position)
+		local h = size / 2 + Vector3.new(15, 60, 15)
+		return math.abs(rel.X) <= h.X and math.abs(rel.Y) <= h.Y and math.abs(rel.Z) <= h.Z
+	end
+
 	local function grabGun()
 		local part = findGunPart()
 		local ch = lp.Character
@@ -228,6 +240,44 @@ return function(Window, Library)
 		end
 		task.wait(0.3)
 		if root and root.Parent then root.CFrame = old end
+	end
+
+	-- bag detection
+	local FULLWORDS = {
+		full = true, dolu = true, lleno = true, voll = true,
+		cheio = true, plein = true, pieno = true, penuh = true,
+	}
+	local bagLbl, lastScan = nil, 0
+
+	local function isShown(o)
+		while o and o ~= game do
+			if o:IsA("GuiObject") and not o.Visible then return false end
+			if o:IsA("ScreenGui") and not o.Enabled then return false end
+			o = o.Parent
+		end
+		return true
+	end
+
+	local function isFullText(t)
+		local s = tostring(t):lower():gsub("[%s%p]", "")
+		return FULLWORDS[s] == true
+	end
+
+	local function bagFull()
+		local pg = lp:FindFirstChild("PlayerGui")
+		if not pg then return false end
+		if bagLbl and bagLbl.Parent then
+			return isShown(bagLbl) and isFullText(bagLbl.Text)
+		end
+		if os.clock() - lastScan < 1 then return false end
+		lastScan = os.clock()
+		for _, d in ipairs(pg:GetDescendants()) do
+			if d:IsA("TextLabel") and isFullText(d.Text) and isShown(d) then
+				bagLbl = d
+				return true
+			end
+		end
+		return false
 	end
 
 	-- combat helpers
@@ -263,7 +313,22 @@ return function(Window, Library)
 		end
 	end
 
-	local function shootMurderer(silent)
+	local function hasLOS(fromPos, target)
+		local ignore = {}
+		if lp.Character then table.insert(ignore, lp.Character) end
+		if target and target.Parent then table.insert(ignore, target.Parent) end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = ignore
+		return workspace:Raycast(fromPos, target.Position - fromPos, params) == nil
+	end
+
+	local SHOOT_OFFSETS = {
+		Vector3.new(0, 0, 8), Vector3.new(8, 0, 0), Vector3.new(-8, 0, 0),
+		Vector3.new(0, 0, -8), Vector3.new(0, 0, 4),
+	}
+
+	local function shootOnce(silent)
 		local gun = getTool("Gun")
 		if not gun then
 			if not silent then Library.Notify("MM2", "You are not Sheriff", "on") end
@@ -274,12 +339,27 @@ return function(Window, Library)
 			if not silent then Library.Notify("MM2", "Murderer not found", "on") end
 			return false
 		end
-		equip(gun)
 		local ch = lp.Character
 		local root = ch and ch:FindFirstChild("HumanoidRootPart")
 		if not root then return false end
-		local tgt = mr.Position + mr.AssemblyLinearVelocity * 0.1
+		equip(gun)
+		gun = getTool("Gun") or gun
 
+		-- wall in the way: briefly stand at a clear spot near the murderer
+		local old
+		if not hasLOS(root.Position, mr) then
+			for _, off in ipairs(SHOOT_OFFSETS) do
+				local pos = (mr.CFrame * CFrame.new(off)).Position
+				if hasLOS(pos, mr) then
+					old = root.CFrame
+					root.CFrame = CFrame.new(pos, mr.Position)
+					task.wait(0.12)
+					break
+				end
+			end
+		end
+
+		local tgt = mr.Position + mr.AssemblyLinearVelocity * 0.1
 		local kl = gun:FindFirstChild("KnifeLocal")
 		local cb = kl and kl:FindFirstChild("CreateBeam")
 		local rf = cb and cb:FindFirstChild("RemoteFunction")
@@ -293,101 +373,109 @@ return function(Window, Library)
 		if not fired and not silent then
 			Library.Notify("MM2", "Shoot failed", "on")
 		end
+
+		if old and root.Parent then
+			task.wait(0.1)
+			root.CFrame = old
+			root.AssemblyLinearVelocity = Vector3.zero
+		end
 		return fired
 	end
 
-	local killing = false
-	local function killAll()
+	local function hit(stab, handle, tr)
+		if stab then pcall(function() stab:FireServer("Slash") end) end
+		if firetouchinterest and handle then
+			pcall(function()
+				firetouchinterest(handle, tr, 0)
+				task.wait()
+				firetouchinterest(handle, tr, 1)
+			end)
+		end
+	end
+
+	local function killAll(silent)
 		if killing then return end
 		local knife = getTool("Knife")
 		local ch = lp.Character
 		local root = ch and ch:FindFirstChild("HumanoidRootPart")
 		if not knife or not root then
-			Library.Notify("MM2", "You are not Murderer", "on")
+			if not silent then Library.Notify("MM2", "You are not Murderer", "on") end
 			return
 		end
 		killing = true
 		pcall(function()
 			equip(knife)
-			local old = root.CFrame
+			knife = getTool("Knife") or knife
 			local handle = knife:FindFirstChild("Handle")
 			local stab = knife:FindFirstChild("Stab")
+			local old, moved = root.CFrame, false
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p ~= lp then
 					local tr = aliveRoot(p)
-					if tr then
-						root.CFrame = tr.CFrame * CFrame.new(0, 0, 2.5)
-						task.wait(0.1)
-						if stab then pcall(function() stab:FireServer("Slash") end) end
-						if firetouchinterest and handle then
-							pcall(function()
-								firetouchinterest(handle, tr, 0)
-								firetouchinterest(handle, tr, 1)
-							end)
+					if tr and not inLobby(tr) then
+						-- first try from a distance
+						hit(stab, handle, tr)
+						task.wait(0.15)
+						local tr2 = aliveRoot(p)
+						if tr2 and not inLobby(tr2) then
+							-- still alive: short close-range attempt
+							moved = true
+							root.CFrame = tr2.CFrame * CFrame.new(0, 0, 3)
+							task.wait(0.05)
+							hit(stab, handle, tr2)
+							task.wait(0.15)
 						end
-						task.wait(0.2)
 					end
 				end
 			end
-			if root.Parent then root.CFrame = old end
+			if moved and root.Parent then
+				root.CFrame = old
+				root.AssemblyLinearVelocity = Vector3.zero
+			end
 		end)
 		killing = false
 	end
 
-	-- farm
-	local SPEEDS = { Slow = 20, Normal = 28 }
-	local farmSpeed = SPEEDS.Normal
-	local farmId, curTween, bagLbl, lastScan = 0, nil, nil, 0
-	local coinCount, farmStart = 0, nil
-	local grabbing, lastGun = false, nil
-	local visited = setmetatable({}, { __mode = "k" })
-	local lastCont = nil
-
-	local FULLWORDS = {
-		full = true, dolu = true, lleno = true, voll = true,
-		cheio = true, plein = true, pieno = true, penuh = true,
-	}
-
-	local function isShown(o)
-		while o and o ~= game do
-			if o:IsA("GuiObject") and not o.Visible then return false end
-			if o:IsA("ScreenGui") and not o.Enabled then return false end
-			o = o.Parent
-		end
-		return true
-	end
-
-	local function isFullText(t)
-		local s = tostring(t):lower():gsub("[%s%p]", "")
-		return FULLWORDS[s] == true
-	end
-
-	local function bagFull()
-		local pg = lp:FindFirstChild("PlayerGui")
-		if not pg then return false end
-		if bagLbl and bagLbl.Parent then
-			return isShown(bagLbl) and isFullText(bagLbl.Text)
-		end
-		if os.clock() - lastScan < 1 then return false end
-		lastScan = os.clock()
-		for _, d in ipairs(pg:GetDescendants()) do
-			if d:IsA("TextLabel") and isFullText(d.Text) and isShown(d) then
-				bagLbl = d
-				return true
+	local function anyTarget()
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= lp then
+				local r = aliveRoot(p)
+				if r and not inLobby(r) then return true end
 			end
 		end
 		return false
 	end
 
-	local function inLobby(root)
-		local lobby = workspace:FindFirstChild("Lobby")
-		if not lobby or not root then return false end
-		local ok, cf, size = pcall(function() return lobby:GetBoundingBox() end)
-		if not ok or not cf then return false end
-		local rel = cf:PointToObjectSpace(root.Position)
-		local h = size / 2 + Vector3.new(15, 60, 15)
-		return math.abs(rel.X) <= h.X and math.abs(rel.Y) <= h.Y and math.abs(rel.Z) <= h.Z
+	local function combatPending()
+		if S.AutoShoot and S.ShootFull and getTool("Gun") and murdererRoot() then return true end
+		if S.Kill and S.KillFull and getTool("Knife") and anyTarget() then return true end
+		return false
 	end
+
+	local function dumpTools()
+		local n = 0
+		for _, name in ipairs({ "Gun", "Knife" }) do
+			local t = getTool(name)
+			if t then
+				for _, d in ipairs(t:GetDescendants()) do
+					if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("BindableEvent") then
+						warn("[SezarMM2] " .. name .. ": " .. d:GetFullName() .. " (" .. d.ClassName .. ")")
+						n = n + 1
+					end
+				end
+			end
+		end
+		Library.Notify("Debug", n .. " remotes (see F9)", "on")
+	end
+
+	-- farm
+	local SPEEDS = { Slow = 20, Normal = 28 }
+	local farmSpeed, farmMode = SPEEDS.Normal, "Normal"
+	local farmId, curTween = 0, nil
+	local coinCount, farmStart = 0, nil
+	local lastGun = nil
+	local visited = setmetatable({}, { __mode = "k" })
+	local lastCont = nil
 
 	local function segDist(a, b, p)
 		local ab = b - a
@@ -496,6 +584,10 @@ return function(Window, Library)
 
 				if not full and bagFull() then full = true end
 				if full then
+					local t0 = os.clock()
+					while S.Farm and farmId == id and os.clock() - t0 < 12 and combatPending() do
+						task.wait(0.5)
+					end
 					if S.BagLobby then
 						tpTo(spawnCF(workspace:FindFirstChild("Lobby")))
 					end
@@ -517,10 +609,23 @@ return function(Window, Library)
 					task.wait(0.5)
 					return
 				end
+
+				if farmMode == "Touch" and firetouchinterest then
+					pcall(function()
+						firetouchinterest(root, coin, 0)
+						task.wait()
+						firetouchinterest(root, coin, 1)
+					end)
+					visited[coin] = true
+					coinCount = coinCount + 1
+					task.wait(0.12)
+					return
+				end
+
 				if goTo(root, coin.CFrame, S.Avoid, id) then
 					visited[coin] = true
 					coinCount = coinCount + 1
-					task.wait(0.3)
+					task.wait(0.15)
 				end
 			end)
 			if not ok then task.wait(0.5) end
@@ -533,11 +638,27 @@ return function(Window, Library)
 		if curTween then pcall(function() curTween:Cancel() end) end
 	end
 
-	local shootId = 0
+	local shootId, killId = 0, 0
+
 	local function shootLoop(id)
 		while S.AutoShoot and shootId == id do
-			pcall(shootMurderer, true)
+			pcall(function()
+				if grabbing then return end
+				if S.ShootFull and not bagFull() then return end
+				shootOnce(true)
+			end)
 			task.wait(1.2)
+		end
+	end
+
+	local function killLoop(id)
+		while S.Kill and killId == id do
+			pcall(function()
+				if grabbing then return end
+				if S.KillFull and not bagFull() then return end
+				killAll(true)
+			end)
+			task.wait(1)
 		end
 	end
 
@@ -570,13 +691,19 @@ return function(Window, Library)
 			stopFarm()
 		end
 	end })
-	Tab:Toggle({ Name = "Avoid Murderer", Default = true, Flag = "mm2_avoid", NoKey = true, Callback = function(v) S.Avoid = v end })
-	Tab:Toggle({ Name = "Lobby on Full Bag", Default = true, Flag = "mm2_baglobby", NoKey = true, Callback = function(v) S.BagLobby = v end })
 	Tab:Dropdown({
 		Name = "Farm Speed", Flag = "mm2_speed", Default = "Normal",
-		Options = { "Slow", "Normal" },
-		Callback = function(v) farmSpeed = SPEEDS[v] or farmSpeed end,
+		Options = { "Slow", "Normal", "Touch" },
+		Callback = function(v)
+			farmMode = v
+			if SPEEDS[v] then farmSpeed = SPEEDS[v] end
+			if v == "Touch" and not firetouchinterest then
+				Library.Notify("MM2", "Touch mode not supported", "on")
+			end
+		end,
 	})
+	Tab:Toggle({ Name = "Avoid Murderer", Default = true, Flag = "mm2_avoid", NoKey = true, Callback = function(v) S.Avoid = v end })
+	Tab:Toggle({ Name = "Lobby on Full Bag", Default = true, Flag = "mm2_baglobby", NoKey = true, Callback = function(v) S.BagLobby = v end })
 	Tab:Toggle({ Name = "Auto Grab Gun", Flag = "mm2_autogun", Callback = function(v) S.AutoGun = v end })
 
 	-- UI: Combat
@@ -586,21 +713,19 @@ return function(Window, Library)
 		shootId = shootId + 1
 		if v then task.spawn(shootLoop, shootId) end
 	end })
-
-	-- UI: Actions
-	Tab:Section("Actions")
-	Tab:Button("Grab Gun", function()
-		task.spawn(function()
-			local ok = pcall(grabGun)
-			if not ok then Library.Notify("MM2", "Grab failed", "on") end
-		end)
-	end)
+	Tab:Toggle({ Name = "Shoot After Full Bag", Flag = "mm2_shootfull", NoKey = true, Callback = function(v) S.ShootFull = v end })
 	Tab:Button("Shoot Murderer", function()
-		task.spawn(function() pcall(shootMurderer, false) end)
+		task.spawn(function() pcall(shootOnce, false) end)
 	end)
-	Tab:Button("Kill All", function()
-		task.spawn(killAll)
-	end)
+	Tab:Toggle({ Name = "Kill All", Flag = "mm2_killall", Callback = function(v)
+		S.Kill = v
+		killId = killId + 1
+		if v then task.spawn(killLoop, killId) end
+	end })
+	Tab:Toggle({ Name = "Kill After Full Bag", Flag = "mm2_killfull", NoKey = true, Callback = function(v) S.KillFull = v end })
+
+	-- UI: Teleport
+	Tab:Section("Teleport")
 	Tab:Button("Teleport to Lobby", function()
 		local ok = pcall(function()
 			if not tpTo(spawnCF(workspace:FindFirstChild("Lobby"))) then
@@ -617,9 +742,21 @@ return function(Window, Library)
 		end)
 		if not ok then Library.Notify("MM2", "Teleport failed", "on") end
 	end)
+
+	-- UI: Actions
+	Tab:Section("Actions")
+	Tab:Button("Grab Gun", function()
+		task.spawn(function()
+			local ok = pcall(grabGun)
+			if not ok then Library.Notify("MM2", "Grab failed", "on") end
+		end)
+	end)
 	Tab:Button("Farm Stats", function()
 		local mins = farmStart and math.floor((os.clock() - farmStart) / 60) or 0
 		Library.Notify("Farm Stats", coinCount .. " coin / " .. mins .. " min", "on")
+	end)
+	Tab:Button("Dump Tool Info", function()
+		pcall(dumpTools)
 	end)
 
 	-- main loop
@@ -647,9 +784,11 @@ return function(Window, Library)
 	Library.Connect(Players.PlayerRemoving, removePlayer)
 
 	table.insert(Library.OnUnload, function()
-		S.Roles, S.Gun, S.Coin, S.AutoShoot = false, false, false, false
+		S.Roles, S.Gun, S.Coin = false, false, false
+		S.AutoShoot, S.Kill = false, false
 		Library.RoleESP = false
 		shootId = shootId + 1
+		killId = killId + 1
 		stopFarm()
 		clearPlayers()
 		clearGun()
