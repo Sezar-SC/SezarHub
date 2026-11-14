@@ -228,6 +228,8 @@ return function(Window, Library)
 	local SPEEDS = { Slow = 20, Normal = 28 }
 	local farmSpeed = SPEEDS.Normal
 	local farmId, curTween, bagGui = 0, nil, nil
+	local coinCount, farmStart = 0, nil
+	local grabbing, lastGun = false, nil
 	local visited = setmetatable({}, { __mode = "k" })
 	local lastCont = nil
 
@@ -378,6 +380,11 @@ return function(Window, Library)
 					return
 				end
 
+				if grabbing then
+					task.wait(0.2)
+					return
+				end
+
 				-- lobby: wait for the round, do not move
 				if inLobby(root) then
 					wasLobby, full, stuck = true, false, 0
@@ -418,6 +425,7 @@ return function(Window, Library)
 				end
 				if goTo(root, coin.CFrame, S.Avoid, id) then
 					visited[coin] = true
+					coinCount = coinCount + 1
 					task.wait(0.3)
 				end
 			end)
@@ -476,6 +484,7 @@ return function(Window, Library)
 	Tab:Toggle({ Name = "Auto Farm Coins", Flag = "mm2_farm", Callback = function(v)
 		if v then
 			S.Farm = true
+			coinCount, farmStart = 0, os.clock()
 			farmId = farmId + 1
 			task.spawn(farmLoop, farmId)
 		else
@@ -498,6 +507,12 @@ return function(Window, Library)
 		Library.Notify("Zone", inLobby(root) and "Lobby" or "Map", "on")
 	end)
 
+	Tab:Toggle({ Name = "Auto Grab Gun", Flag = "mm2_autogun", Callback = function(v) S.AutoGun = v end })
+	Tab:Button("Farm Stats", function()
+		local mins = farmStart and math.floor((os.clock() - farmStart) / 60) or 0
+		Library.Notify("Farm Stats", coinCount .. " coin / " .. mins .. " min", "on")
+	end)
+
 	local acc = 0
 	Library.Connect(RunService.Heartbeat, function(dt)
 		acc = acc + dt
@@ -506,6 +521,18 @@ return function(Window, Library)
 		if S.Roles then pcall(updateRoles) end
 		if S.Gun then pcall(updateGun) end
 		if S.Coin then pcall(updateCoins) end
+		if S.AutoGun and not grabbing then
+			local gp = findGunPart()
+			if gp and gp ~= lastGun then
+				lastGun = gp
+				grabbing = true
+				task.spawn(function()
+					pcall(function() if curTween then curTween:Cancel() end end)
+					pcall(grabGun)
+					grabbing = false
+				end)
+			end
+		end
 	end)
 	Library.Connect(Players.PlayerRemoving, removePlayer)
 
