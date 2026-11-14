@@ -339,7 +339,7 @@ return function(Window, Library)
 					return
 				end
 
-				if not full and (stuck >= 5 or bagFull()) then full = true end
+				if not full and bagFull() then full = true end
 				if full then
 					if S.BagLobby then
 						tpTo(spawnCF(workspace:FindFirstChild("Lobby")))
