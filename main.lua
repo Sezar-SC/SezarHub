@@ -211,22 +211,7 @@ local function loadModule(path, tab)
 	end
 end
 
--- Tabs
-local About = Window:AddTab("About")
-loadModule("modules/about.lua", About)
-
-if gamePath then
-	local gameFn = fetch(gamePath)
-	if type(gameFn) == "function" then
-		local ok, err = pcall(gameFn, Window, Library)
-		if not ok then
-			warn("[SezarHub] " .. gamePath .. " error: " .. tostring(err))
-			pcall(Library.Notify, "Game module error", gamePath .. " could not be loaded", "off", 5)
-		end
-	else
-		pcall(Library.Notify, "Game module unavailable", gamePath .. " could not be downloaded", "off", 5)
-	end
-end
+loadModule("modules/misc.lua", Misc)
 
 local Movement = Window:AddTab("Movement")
 local ESP = Window:AddTab("ESP")
