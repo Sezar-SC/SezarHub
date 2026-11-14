@@ -1,6 +1,7 @@
 -- Translations: ["English text"] = { Turkish, Russian }
 local TR = {
 	-- Theme + key screen
+	["WELCOME, SIR"] = { "HO\u{15E} GELD\u{130}N\u{130}Z, EFEND\u{130}M", "ДОБРО ПОЖАЛОВАТЬ, ГОСПОДИН" },
 	["Theme"] = { "Tema", "Тема" },
 	["Role"] = { "Rol", "Роль" },
 	["Updated"] = { "Güncellendi", "Обновлено" },
