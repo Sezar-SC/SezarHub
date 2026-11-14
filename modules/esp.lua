@@ -106,19 +106,21 @@ return function(Tab, Library)
 					local col = COLORS[S.Color] or COLORS.Purple
 					if S.TeamColor and p.Team then col = p.TeamColor.Color end
 
-					c.hl.Enabled = S.Highlight
+					local rs = Library.RoleESP == true
+					c.hl.Enabled = S.Highlight and not rs
 					c.hl.FillColor = col
 					c.hl.OutlineColor = col
 					c.box.Enabled = S.Box
 					c.boxStroke.Color = col
 
 					local lines = {}
-					if S.Names then table.insert(lines, p.Name) end
+					if S.Names and not rs then table.insert(lines, p.Name) end
 					local info = {}
 					if S.Dist then table.insert(info, math.floor(dist) .. "m") end
 					if S.Health then table.insert(info, math.floor(hum.Health) .. " HP") end
 					if #info > 0 then table.insert(lines, table.concat(info, "  ")) end
 					c.tag.Enabled = #lines > 0
+					c.tag.StudsOffset = Vector3.new(0, rs and 3.8 or 2.6, 0)
 					c.label.Text = table.concat(lines, "\n")
 					c.label.TextColor3 = col
 				end
