@@ -211,16 +211,8 @@ local function loadModule(path, tab)
 	end
 end
 
-loadModule("modules/misc.lua", Misc)
-
-local Movement = Window:AddTab("Movement")
-local ESP = Window:AddTab("ESP")
-local Misc = Window:AddTab("Misc")
-
-loadModule("modules/movement.lua", Movement)
-loadModule("modules/fly.lua", Movement)
-loadModule("modules/esp.lua", ESP)
-loadModule("modules/misc.lua", Misc)
+local About = Window:AddTab("About")
+loadModule("modules/about.lua", About)
 
 if gamePath then
 	local gameFn = fetch(gamePath)
@@ -234,6 +226,15 @@ if gamePath then
 		pcall(Library.Notify, "Game module unavailable", gamePath .. " could not be downloaded", "off", 5)
 	end
 end
+
+local Movement = Window:AddTab("Movement")
+local ESP = Window:AddTab("ESP")
+local Misc = Window:AddTab("Misc")
+
+loadModule("modules/movement.lua", Movement)
+loadModule("modules/fly.lua", Movement)
+loadModule("modules/esp.lua", ESP)
+loadModule("modules/misc.lua", Misc)
 
 -- Settings tab
 local Settings = Window:AddTab("Settings")
