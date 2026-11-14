@@ -75,6 +75,11 @@ local TR = {
 	["Grab Gun"] = { "Silah\u{131} Al", "Взять пистолет" },
 	["Gun not found"] = { "Silah bulunamad\u{131}", "Пистолет не найден" },
 	["Grab failed"] = { "Alma ba\u{15F}ar\u{131}s\u{131}z", "Не удалось взять" },
+	["Coin ESP"] = { "Coin ESP", "ESP монет" },
+	["Teleport to Lobby"] = { "Lobiye I\u{15F}\u{131}nlan", "Телепорт в лобби" },
+	["Teleport to Map"] = { "Haritaya I\u{15F}\u{131}nlan", "Телепорт на карту" },
+	["Lobby not found"] = { "Lobi bulunamad\u{131}", "Лобби не найдено" },
+	["Map not found"] = { "Harita bulunamad\u{131}", "Карта не найдена" },
 
 	-- Misc
 	["Anti-AFK"] = { "Anti-AFK", "Анти-АФК" },
