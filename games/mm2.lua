@@ -383,7 +383,15 @@ return function(Window, Library)
 	end
 
 	local function hit(stab, handle, tr)
-		if stab then pcall(function() stab:FireServer("Slash") end) end
+		local knife = getTool("Knife")
+		if not knife then return end
+		pcall(function() knife:Activate() end)
+		task.wait(0.05)
+		local ev = knife:FindFirstChild("Events")
+		local ks = ev and ev:FindFirstChild("KnifeStabbed")
+		local ht = ev and ev:FindFirstChild("HandleTouched")
+		if ks then pcall(function() ks:FireServer() end) end
+		if ht then pcall(function() ht:FireServer(tr) end) end
 		if firetouchinterest and handle then
 			pcall(function()
 				firetouchinterest(handle, tr, 0)
@@ -468,7 +476,80 @@ return function(Window, Library)
 		Library.Notify("Debug", n .. " remotes (see F9)", "on")
 	end
 
-	-- farm
+	-- vote
+	local voteId, lastVote = 0, 0
+	S.Vote, S.MultiVote, S.VotePick = false, false, "Pad 1"
+
+	local function padVotes(model)
+		local gui = model:FindFirstChild("VoteInfoGui")
+		local cont = gui and gui:FindFirstChild("Container")
+		local v = cont and cont:FindFirstChild("Votes")
+		return v and tonumber(tostring(v.Text):match("%d+")) or 0
+	end
+
+	local function pickPad()
+		local lobby = workspace:FindFirstChild("Lobby")
+		local vp = lobby and lobby:FindFirstChild("VotePads")
+		if not vp then return nil end
+		if S.VotePick == "Most Votes" then
+			local best, bn
+			for _, m in ipairs(vp:GetChildren()) do
+				local pad = m:FindFirstChild("Pad")
+				if pad then
+					local n = padVotes(m)
+					if not bn or n > bn then best, bn = pad, n end
+				end
+			end
+			return best
+		end
+		local idx = tostring(S.VotePick):match("%d")
+		local m = idx and vp:FindFirstChild("VotePad" .. idx)
+		return m and m:FindFirstChild("Pad")
+	end
+
+	local function doVote()
+		local ch = lp.Character
+		local root = ch and ch:FindFirstChild("HumanoidRootPart")
+		local pad = pickPad()
+		if not root or not pad or not inLobby(root) then return false end
+		local home = root.CFrame
+		local n = S.MultiVote and 12 or 1
+		for _ = 1, n do
+			if firetouchinterest then
+				pcall(function()
+					firetouchinterest(root, pad, 0)
+					task.wait()
+					firetouchinterest(root, pad, 1)
+				end)
+			end
+			root.CFrame = pad.CFrame + Vector3.new(0, 3, 0)
+			task.wait(0.15)
+			root.CFrame = home
+			task.wait(0.15)
+		end
+		root.AssemblyLinearVelocity = Vector3.zero
+		return true
+	end
+
+	local function voteLoop(id)
+		while S.Vote and voteId == id do
+			pcall(function()
+				local ch = lp.Character
+				local root = ch and ch:FindFirstChild("HumanoidRootPart")
+				if not root then return end
+				if inLobby(root) then
+					if os.clock() - lastVote > 20 and pickPad() then
+						lastVote = os.clock()
+						doVote()
+					end
+				else
+					lastVote = 0
+				end
+			end)
+			task.wait(1)
+		end
+	end
+
 	local SPEEDS = { Slow = 20, Normal = 28 }
 	local farmSpeed, farmMode = SPEEDS.Normal, "Normal"
 	local farmId, curTween = 0, nil
@@ -724,6 +805,29 @@ return function(Window, Library)
 	end })
 	Tab:Toggle({ Name = "Kill After Full Bag", Flag = "mm2_killfull", NoKey = true, Callback = function(v) S.KillFull = v end })
 
+	-- UI: Vote
+	Tab:Section("Vote")
+	Tab:Toggle({ Name = "Auto Vote Map", Flag = "mm2_vote", Callback = function(v)
+		S.Vote = v
+		voteId = voteId + 1
+		if v then
+			lastVote = 0
+			task.spawn(voteLoop, voteId)
+		end
+	end })
+	Tab:Dropdown({
+		Name = "Vote Pad", Flag = "mm2_votepad", Default = "Pad 1",
+		Options = { "Pad 1", "Pad 2", "Pad 3", "Most Votes" },
+		Callback = function(v) S.VotePick = v end,
+	})
+	Tab:Toggle({ Name = "Multi Vote (test)", Flag = "mm2_multivote", NoKey = true, Callback = function(v) S.MultiVote = v end })
+	Tab:Button("Vote Now", function()
+		task.spawn(function()
+			local ok, res = pcall(doVote)
+			if not ok or not res then Library.Notify("MM2", "Vote failed", "on") end
+		end)
+	end)
+
 	-- UI: Teleport
 	Tab:Section("Teleport")
 	Tab:Button("Teleport to Lobby", function()
@@ -786,6 +890,8 @@ return function(Window, Library)
 	table.insert(Library.OnUnload, function()
 		S.Roles, S.Gun, S.Coin = false, false, false
 		S.AutoShoot, S.Kill = false, false
+		S.Vote = false
+		voteId = voteId + 1
 		Library.RoleESP = false
 		shootId = shootId + 1
 		killId = killId + 1
