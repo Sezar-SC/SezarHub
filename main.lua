@@ -22,6 +22,7 @@ end
 
 local Library = fetch("ui.lua")
 if not Library then return end
+Library.Base = BASE
 
 local function stopStartup(message)
 	warn("[SezarHub] " .. message)
@@ -159,11 +160,11 @@ if Config.KeyEnabled ~= false then
 	end
 end
 
--- Apply a known visual profile returned by the Worker.
-if Library.KeyProfile and Library.ApplyKeyProfile then
+-- Pro profile (only when the Worker returned "efendim"). Anything else stays Free.
+if Library.KeyProfile == "efendim" and Library.ApplyKeyProfile then
 	local okProfile, applied = pcall(Library.ApplyKeyProfile, Library.KeyProfile)
 	if not okProfile or not applied then
-		warn("[SezarHub] Unknown visual key profile; default theme will be used")
+		warn("[SezarHub] Pro theme pack unavailable; Free look will be used")
 	end
 end
 
@@ -255,8 +256,9 @@ themeDD = Settings:Dropdown({
 		return Library.ThemeOptions and Library.ThemeOptions() or { "Neon Purple" }
 	end,
 	Callback = function(v)
+		-- a saved theme this account may not use is replaced silently
 		if Library.SetTheme and not Library.SetTheme(v) and themeDD then
-			themeDD.Set(Library.ThemeName)
+			themeDD.Set(Library.ThemeName, true)
 		end
 	end,
 })
@@ -317,7 +319,7 @@ local restored = Library.Load()
 loaded = true
 Library.AutoSave = autoSaveWanted
 
-Library.Splash(2.6, Library.WelcomeMessage)
+Library.Splash(Library.IsPro and 3.4 or 2.6, Library.WelcomeMessage)
 Window:Open()
 Library.Notify("SezarHub loaded", restored and "Config restored" or "Welcome", "on", 4)
 
