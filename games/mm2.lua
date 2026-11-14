@@ -442,6 +442,7 @@ return function(Window, Library)
 	Tab:Section("ESP")
 	Tab:Toggle({ Name = "Role ESP", Flag = "mm2_roles", Callback = function(v)
 		S.Roles = v
+		Library.RoleESP = v
 		if not v then clearPlayers() end
 	end })
 	Tab:Toggle({ Name = "Show Innocents", Default = true, Flag = "mm2_innocent", NoKey = true, Callback = function(v) S.Innocent = v end })
@@ -538,6 +539,7 @@ return function(Window, Library)
 
 	table.insert(Library.OnUnload, function()
 		S.Roles, S.Gun, S.Coin = false, false, false
+		Library.RoleESP = false
 		stopFarm()
 		clearPlayers()
 		clearGun()
