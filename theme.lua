@@ -57,6 +57,7 @@ return function(Library)
 
 	local function allowed(t)
 		if t.pro then return Library.IsPro == true end
+		if Library.IsPro then return false end -- Pro accounts only use Pro themes
 		if t.tier == 0 then return true end
 		return Library.VIPEnabled == true and (Library.Tier or 0) >= t.tier
 	end
@@ -119,7 +120,7 @@ return function(Library)
 		if not t then return false end
 
 		if not allowed(t) then
-			if not silent then Library.Notify("Theme locked", "Subscriber or VIP only", "off") end
+			if not silent and not Library.IsPro then Library.Notify("Theme locked", "Subscriber or VIP only", "off") end
 			return false
 		end
 		if name == Library.ThemeName then return true end
