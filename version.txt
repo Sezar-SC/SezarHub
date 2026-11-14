@@ -1,2 +1,2 @@
-2.4.0
-Key check moved to a secure server
+2.5.0
+Pro profile, new themes and mobile layout
