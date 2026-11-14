@@ -358,7 +358,7 @@ function Library.Splash(duration, welcomeText)
 		create("UIScale", { Scale = math.clamp(vx / 800, 0.45, 1) }, box)
 
 		local welcome = create("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 136 or 0),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 0),
 			Size = UDim2.new(1, 0, 0, pro and 46 or 34), Font = Enum.Font.GothamBold,
 			TextSize = 24, TextColor3 = Theme.Purple, TextTransparency = 1, Text = "",
 		}, box)
@@ -367,7 +367,7 @@ function Library.Splash(duration, welcomeText)
 			welcome.Font = Enum.Font.SourceSansBold
 			welcome.TextSize = 38
 			welcome.TextColor3 = Color3.new(1, 1, 1)
-			welcome.Text = (type(welcomeText) == "string" and welcomeText ~= "") and welcomeText or "Ho\u{15F} geldiniz, Efendim"
+			welcome.Text = Library.T("WELCOME, SIR")
 			wScale = create("UIScale", { Scale = 0 }, welcome)
 			wGrad = create("UIGradient", { Color = Library.RainbowSeq(0), Rotation = 0 }, welcome)
 		elseif type(welcomeText) == "string" and welcomeText ~= "" then
@@ -378,7 +378,7 @@ function Library.Splash(duration, welcomeText)
 		end
 
 		local row = create("Frame", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 10 or 40), Size = UDim2.new(1, 0, 0, 100),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 50 or 40), Size = UDim2.new(1, 0, 0, 100),
 		}, box)
 		create("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
@@ -398,7 +398,7 @@ function Library.Splash(duration, welcomeText)
 		end
 
 		local line = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, pro and 122 or 152),
+			AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, pro and 162 or 152),
 			Size = UDim2.fromOffset(0, 3), BackgroundColor3 = pro and Color3.new(1, 1, 1) or Theme.Purple, BorderSizePixel = 0,
 		}, box)
 		corner(line, 2)
@@ -406,7 +406,7 @@ function Library.Splash(duration, welcomeText)
 		if pro then lGrad = create("UIGradient", { Color = Library.RainbowSeq(0), Rotation = 0 }, line) end
 
 		local sub = create("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 190 or 168), Size = UDim2.new(1, 0, 0, 24),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 180 or 168), Size = UDim2.new(1, 0, 0, 24),
 			Font = fontFor(Enum.Font.GothamMedium), TextSize = sizeFor(15), TextColor3 = Theme.Sub, TextTransparency = 1,
 			Text = Library.T("Developer") .. ": Sezar   |   v" .. Library.Version,
 		}, box)
