@@ -6,7 +6,7 @@ return function(Window, Library)
 
 	local Tab = Window:AddTab("MM2")
 
-	local S = { Roles = false, Innocent = true, Gun = false, Coin = false }
+	local S = { Roles = false, Innocent = true, Gun = false, Coin = false, Farm = false, Avoid = true, BagLobby = true }
 	local COL = {
 		Murderer = Color3.fromRGB(255, 60, 60),
 		Sheriff = Color3.fromRGB(60, 140, 255),
@@ -224,6 +224,107 @@ return function(Window, Library)
 		if root and root.Parent then root.CFrame = old end
 	end
 
+	local TweenService = game:GetService("TweenService")
+	local SPEEDS = { Slow = 20, Normal = 28, Fast = 38 }
+	local farmSpeed = SPEEDS.Normal
+	local farmId, curTween, bagGui = 0, nil, nil
+	local visited = setmetatable({}, { __mode = "k" })
+	local lastCont = nil
+
+	local function bagState()
+		local pg = lp:FindFirstChild("PlayerGui")
+		if not pg then return nil end
+		if not bagGui or not bagGui.Parent then
+			bagGui = pg:FindFirstChild("CoinBags", true)
+		end
+		if not bagGui then return nil end
+		for _, d in ipairs(bagGui:GetDescendants()) do
+			if d:IsA("TextLabel") or d:IsA("TextButton") then
+				local a, b = tostring(d.Text):match("(%d+)%s*/%s*(%d+)")
+				if a then return tonumber(a), tonumber(b) end
+			end
+		end
+		return nil
+	end
+
+	local function murdererRoot()
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= lp and roleOf(p) == "Murderer" then
+				local c = p.Character
+				return c and c:FindFirstChild("HumanoidRootPart")
+			end
+		end
+		return nil
+	end
+
+	local function pickCoin(root)
+		if not coinCont or not coinCont.Parent then
+			coinCont = workspace:FindFirstChild("CoinContainer", true)
+		end
+		if not coinCont then return nil end
+		if coinCont ~= lastCont then
+			lastCont = coinCont
+			visited = setmetatable({}, { __mode = "k" })
+		end
+		local mr = S.Avoid and murdererRoot() or nil
+		local best, bd = nil, math.huge
+		for _, c in ipairs(coinCont:GetChildren()) do
+			if c:IsA("BasePart") and not visited[c] then
+				local safe = not (mr and (mr.Position - c.Position).Magnitude < 30)
+				if safe then
+					local d = (root.Position - c.Position).Magnitude
+					if d < bd then best, bd = c, d end
+				end
+			end
+		end
+		return best, bd
+	end
+
+	local function farmLoop(id)
+		local parked = false
+		while S.Farm and farmId == id do
+			local ok = pcall(function()
+				local ch = lp.Character
+				local root = ch and ch:FindFirstChild("HumanoidRootPart")
+				local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+				if not root or not hum or hum.Health <= 0 then
+					task.wait(1)
+					return
+				end
+
+				local cur, max = bagState()
+				if cur and max and cur >= max then
+					if S.BagLobby and not parked then
+						parked = true
+						tpTo(spawnCF(workspace:FindFirstChild("Lobby")))
+					end
+					task.wait(2)
+					return
+				end
+				parked = false
+
+				local coin, dist = pickCoin(root)
+				if not coin then
+					task.wait(0.5)
+					return
+				end
+				local t = math.max(dist / farmSpeed, 0.05)
+				curTween = TweenService:Create(root, TweenInfo.new(t, Enum.EasingStyle.Linear), { CFrame = coin.CFrame })
+				curTween:Play()
+				curTween.Completed:Wait()
+				visited[coin] = true
+				task.wait(0.12)
+			end)
+			if not ok then task.wait(0.5) end
+		end
+	end
+
+	local function stopFarm()
+		S.Farm = false
+		farmId = farmId + 1
+		if curTween then pcall(function() curTween:Cancel() end) end
+	end
+
 	Tab:Section("ESP")
 	Tab:Toggle({ Name = "Role ESP", Flag = "mm2_roles", Callback = function(v)
 		S.Roles = v
@@ -265,6 +366,32 @@ return function(Window, Library)
 		if not ok then Library.Notify("MM2", "Teleport failed", "on") end
 	end)
 
+	Tab:Section("Auto Farm")
+	Tab:Toggle({ Name = "Auto Farm Coins", Flag = "mm2_farm", Callback = function(v)
+		if v then
+			S.Farm = true
+			farmId = farmId + 1
+			task.spawn(farmLoop, farmId)
+		else
+			stopFarm()
+		end
+	end })
+	Tab:Toggle({ Name = "Avoid Murderer", Default = true, Flag = "mm2_avoid", NoKey = true, Callback = function(v) S.Avoid = v end })
+	Tab:Toggle({ Name = "Lobby on Full Bag", Default = true, Flag = "mm2_baglobby", NoKey = true, Callback = function(v) S.BagLobby = v end })
+	Tab:Dropdown({
+		Name = "Farm Speed", Flag = "mm2_speed", Default = "Normal",
+		Options = { "Slow", "Normal", "Fast" },
+		Callback = function(v) farmSpeed = SPEEDS[v] or farmSpeed end,
+	})
+	Tab:Button("Check Bag", function()
+		local cur, max = bagState()
+		if cur then
+			Library.Notify("Bag", cur .. " / " .. max, "on")
+		else
+			Library.Notify("MM2", "Bag not readable", "on")
+		end
+	end)
+
 	local acc = 0
 	Library.Connect(RunService.Heartbeat, function(dt)
 		acc = acc + dt
@@ -278,6 +405,7 @@ return function(Window, Library)
 
 	table.insert(Library.OnUnload, function()
 		S.Roles, S.Gun, S.Coin = false, false, false
+		stopFarm()
 		clearPlayers()
 		clearGun()
 		clearCoins()
