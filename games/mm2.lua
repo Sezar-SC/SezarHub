@@ -74,9 +74,8 @@ return function(Window, Library)
 
 	local function clearGun()
 		if gunObj then
-			for _, o in pairs(gunObj) do
-				if typeof(o) == "Instance" then pcall(function() o:Destroy() end) end
-			end
+			if gunObj.hl then pcall(function() gunObj.hl:Destroy() end) end
+			if gunObj.tag then pcall(function() gunObj.tag:Destroy() end) end
 		end
 		gunObj = nil
 	end
