@@ -288,6 +288,14 @@ return function(Window, Library)
 		return nil
 	end
 
+	local function segDist(a, b, p)
+		local ab = b - a
+		local l2 = ab:Dot(ab)
+		if l2 == 0 then return (p - a).Magnitude end
+		local t = math.clamp((p - a):Dot(ab) / l2, 0, 1)
+		return (p - (a + ab * t)).Magnitude
+	end
+
 	local function pickCoin(root)
 		if not coinCont or not coinCont.Parent then
 			coinCont = workspace:FindFirstChild("CoinContainer", true)
@@ -301,7 +309,11 @@ return function(Window, Library)
 		local best, bd = nil, math.huge
 		for _, c in ipairs(coinCont:GetChildren()) do
 			if c:IsA("BasePart") and not visited[c] then
-				local safe = not (mr and (mr.Position - c.Position).Magnitude < 30)
+				local safe = true
+				if mr then
+					safe = (mr.Position - c.Position).Magnitude >= 45
+						and segDist(root.Position, c.Position, mr.Position) >= 30
+				end
 				if safe then
 					local d = (root.Position - c.Position).Magnitude
 					if d < bd then best, bd = c, d end
@@ -309,6 +321,48 @@ return function(Window, Library)
 			end
 		end
 		return best, bd
+	end
+
+	-- returns true if the tween finished, false if cancelled (murderer too close)
+	local function goTo(root, cf, watch, id)
+		local dist = (root.Position - cf.Position).Magnitude
+		local t = math.max(dist / farmSpeed, 0.05)
+		local tw = TweenService:Create(root, TweenInfo.new(t, Enum.EasingStyle.Linear), { CFrame = cf })
+		curTween = tw
+		local done = false
+		local con = tw.Completed:Connect(function() done = true end)
+		tw:Play()
+		local finished = true
+		while not done and S.Farm and farmId == id do
+			if watch then
+				local mr = murdererRoot()
+				if mr and (mr.Position - root.Position).Magnitude < 28 then
+					pcall(function() tw:Cancel() end)
+					finished = false
+					break
+				end
+			end
+			task.wait(0.1)
+		end
+		con:Disconnect()
+		return finished and done
+	end
+
+	local function fleeFrom(root, mr, id)
+		local best, bd = nil, 0
+		if coinCont and coinCont.Parent then
+			for _, c in ipairs(coinCont:GetChildren()) do
+				if c:IsA("BasePart") and not visited[c] then
+					local d = (mr.Position - c.Position).Magnitude
+					if d > bd and segDist(root.Position, c.Position, mr.Position) >= 12 then
+						best, bd = c, d
+					end
+				end
+			end
+		end
+		if best then
+			goTo(root, best.CFrame, false, id)
+		end
 	end
 
 	local function farmLoop(id)
@@ -348,18 +402,24 @@ return function(Window, Library)
 					return
 				end
 
-				local coin, dist = pickCoin(root)
+				if S.Avoid then
+					local mr = murdererRoot()
+					if mr and (mr.Position - root.Position).Magnitude < 40 then
+						fleeFrom(root, mr, id)
+						task.wait(0.2)
+						return
+					end
+				end
+
+				local coin = pickCoin(root)
 				if not coin then
 					task.wait(0.5)
 					return
 				end
-				local t = math.max(dist / farmSpeed, 0.05)
-				curTween = TweenService:Create(root, TweenInfo.new(t, Enum.EasingStyle.Linear), { CFrame = coin.CFrame })
-				curTween:Play()
-				curTween.Completed:Wait()
-				visited[coin] = true
-				task.wait(0.3)
-				if coin.Parent then stuck = stuck + 1 else stuck = 0 end
+				if goTo(root, coin.CFrame, S.Avoid, id) then
+					visited[coin] = true
+					task.wait(0.3)
+				end
 			end)
 			if not ok then task.wait(0.5) end
 		end
