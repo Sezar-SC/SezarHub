@@ -6,7 +6,7 @@ return function(Window, Library)
 
 	local Tab = Window:AddTab("MM2")
 
-	local S = { Roles = false, Innocent = true, Gun = false }
+	local S = { Roles = false, Innocent = true, Gun = false, Coin = false }
 	local COL = {
 		Murderer = Color3.fromRGB(255, 60, 60),
 		Sheriff = Color3.fromRGB(60, 140, 255),
@@ -134,6 +134,75 @@ return function(Window, Library)
 		end
 	end
 
+	local coins, coinCont, lastFind = {}, nil, 0
+
+	local function clearCoins()
+		for _, g in pairs(coins) do pcall(function() g:Destroy() end) end
+		coins = {}
+	end
+
+	local function updateCoins()
+		if not coinCont or not coinCont.Parent then
+			if os.clock() - lastFind < 1 then return end
+			lastFind = os.clock()
+			coinCont = workspace:FindFirstChild("CoinContainer", true)
+		end
+		local seen = {}
+		if coinCont then
+			for _, c in ipairs(coinCont:GetChildren()) do
+				if c:IsA("BasePart") then
+					seen[c] = true
+					if not coins[c] then
+						local g = Instance.new("BillboardGui")
+						g.Adornee = c
+						g.AlwaysOnTop = true
+						g.Size = UDim2.new(0, 10, 0, 10)
+						g.Parent = holder
+						local f = Instance.new("Frame")
+						f.Size = UDim2.new(1, 0, 1, 0)
+						f.BackgroundColor3 = COL.Gun
+						f.BorderSizePixel = 0
+						f.Parent = g
+						Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+						coins[c] = g
+					end
+				end
+			end
+		end
+		for c, g in pairs(coins) do
+			if not seen[c] or not c.Parent then
+				pcall(function() g:Destroy() end)
+				coins[c] = nil
+			end
+		end
+	end
+
+	local function spawnCF(model)
+		local sp = model and model:FindFirstChild("Spawns")
+		if not sp then return nil end
+		local list = sp:GetChildren()
+		local p = list[math.random(1, math.max(#list, 1))]
+		if p and p:IsA("BasePart") then return p.CFrame end
+		return nil
+	end
+
+	local function tpTo(cf)
+		local ch = lp.Character
+		local root = ch and ch:FindFirstChild("HumanoidRootPart")
+		if not root or not cf then return false end
+		root.CFrame = cf + Vector3.new(0, 3, 0)
+		return true
+	end
+
+	local function findMap()
+		for _, m in ipairs(workspace:GetChildren()) do
+			if m:IsA("Model") and m.Name ~= "Lobby" and m:FindFirstChild("Spawns") then
+				return m
+			end
+		end
+		return nil
+	end
+
 	local function grabGun()
 		local part = findGunPart()
 		local ch = lp.Character
@@ -166,12 +235,34 @@ return function(Window, Library)
 		if not v then clearGun() end
 	end })
 
+	Tab:Toggle({ Name = "Coin ESP", Flag = "mm2_coin", Callback = function(v)
+		S.Coin = v
+		if not v then clearCoins() end
+	end })
+
 	Tab:Section("Actions")
 	Tab:Button("Grab Gun", function()
 		task.spawn(function()
 			local ok = pcall(grabGun)
 			if not ok then Library.Notify("MM2", "Grab failed", "on") end
 		end)
+	end)
+
+	Tab:Button("Teleport to Lobby", function()
+		local ok = pcall(function()
+			if not tpTo(spawnCF(workspace:FindFirstChild("Lobby"))) then
+				Library.Notify("MM2", "Lobby not found", "on")
+			end
+		end)
+		if not ok then Library.Notify("MM2", "Teleport failed", "on") end
+	end)
+	Tab:Button("Teleport to Map", function()
+		local ok = pcall(function()
+			if not tpTo(spawnCF(findMap())) then
+				Library.Notify("MM2", "Map not found", "on")
+			end
+		end)
+		if not ok then Library.Notify("MM2", "Teleport failed", "on") end
 	end)
 
 	local acc = 0
@@ -181,13 +272,15 @@ return function(Window, Library)
 		acc = 0
 		if S.Roles then pcall(updateRoles) end
 		if S.Gun then pcall(updateGun) end
+		if S.Coin then pcall(updateCoins) end
 	end)
 	Library.Connect(Players.PlayerRemoving, removePlayer)
 
 	table.insert(Library.OnUnload, function()
-		S.Roles, S.Gun = false, false
+		S.Roles, S.Gun, S.Coin = false, false, false
 		clearPlayers()
 		clearGun()
+		clearCoins()
 		holder:Destroy()
 	end)
 end
