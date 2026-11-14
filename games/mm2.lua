@@ -62,9 +62,8 @@ return function(Window, Library)
 	local function removePlayer(p)
 		local c = cache[p]
 		if c then
-			for _, o in pairs(c) do
-				if typeof(o) == "Instance" then pcall(function() o:Destroy() end) end
-			end
+			if c.hl then pcall(function() c.hl:Destroy() end) end
+			if c.tag then pcall(function() c.tag:Destroy() end) end
 		end
 		cache[p] = nil
 	end
