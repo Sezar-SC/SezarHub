@@ -225,26 +225,57 @@ return function(Window, Library)
 	end
 
 	local TweenService = game:GetService("TweenService")
-	local SPEEDS = { Slow = 20, Normal = 28, Fast = 38 }
+	local SPEEDS = { Slow = 20, Normal = 28 }
 	local farmSpeed = SPEEDS.Normal
 	local farmId, curTween, bagGui = 0, nil, nil
 	local visited = setmetatable({}, { __mode = "k" })
 	local lastCont = nil
 
-	local function bagState()
-		local pg = lp:FindFirstChild("PlayerGui")
-		if not pg then return nil end
-		if not bagGui or not bagGui.Parent then
-			bagGui = pg:FindFirstChild("CoinBags", true)
+	local FULLWORDS = {
+		full = true, dolu = true, lleno = true, voll = true,
+		cheio = true, plein = true, pieno = true, penuh = true,
+	}
+	local bagLbl, lastScan = nil, 0
+
+	local function isShown(o)
+		while o and o ~= game do
+			if o:IsA("GuiObject") and not o.Visible then return false end
+			if o:IsA("ScreenGui") and not o.Enabled then return false end
+			o = o.Parent
 		end
-		if not bagGui then return nil end
-		for _, d in ipairs(bagGui:GetDescendants()) do
-			if d:IsA("TextLabel") or d:IsA("TextButton") then
-				local a, b = tostring(d.Text):match("(%d+)%s*/%s*(%d+)")
-				if a then return tonumber(a), tonumber(b) end
+		return true
+	end
+
+	local function isFullText(t)
+		local s = tostring(t):lower():gsub("[%s%p]", "")
+		return FULLWORDS[s] == true
+	end
+
+	local function bagFull()
+		local pg = lp:FindFirstChild("PlayerGui")
+		if not pg then return false end
+		if bagLbl and bagLbl.Parent then
+			return isShown(bagLbl) and isFullText(bagLbl.Text)
+		end
+		if os.clock() - lastScan < 1 then return false end
+		lastScan = os.clock()
+		for _, d in ipairs(pg:GetDescendants()) do
+			if d:IsA("TextLabel") and isFullText(d.Text) and isShown(d) then
+				bagLbl = d
+				return true
 			end
 		end
-		return nil
+		return false
+	end
+
+	local function inLobby(root)
+		local lobby = workspace:FindFirstChild("Lobby")
+		if not lobby or not root then return false end
+		local ok, cf, size = pcall(function() return lobby:GetBoundingBox() end)
+		if not ok or not cf then return false end
+		local rel = cf:PointToObjectSpace(root.Position)
+		local h = size / 2 + Vector3.new(15, 60, 15)
+		return math.abs(rel.X) <= h.X and math.abs(rel.Y) <= h.Y and math.abs(rel.Z) <= h.Z
 	end
 
 	local function murdererRoot()
@@ -281,27 +312,41 @@ return function(Window, Library)
 	end
 
 	local function farmLoop(id)
-		local parked = false
+		local wasLobby, stuck, full = true, 0, false
 		while S.Farm and farmId == id do
 			local ok = pcall(function()
 				local ch = lp.Character
 				local root = ch and ch:FindFirstChild("HumanoidRootPart")
 				local hum = ch and ch:FindFirstChildOfClass("Humanoid")
 				if not root or not hum or hum.Health <= 0 then
+					wasLobby = true
 					task.wait(1)
 					return
 				end
 
-				local cur, max = bagState()
-				if cur and max and cur >= max then
-					if S.BagLobby and not parked then
-						parked = true
+				-- lobby: wait for the round, do not move
+				if inLobby(root) then
+					wasLobby, full, stuck = true, false, 0
+					task.wait(1)
+					return
+				end
+
+				-- just arrived in the map: new round
+				if wasLobby then
+					wasLobby, full, stuck = false, false, 0
+					visited = setmetatable({}, { __mode = "k" })
+					task.wait(1.5)
+					return
+				end
+
+				if not full and (stuck >= 5 or bagFull()) then full = true end
+				if full then
+					if S.BagLobby then
 						tpTo(spawnCF(workspace:FindFirstChild("Lobby")))
 					end
 					task.wait(2)
 					return
 				end
-				parked = false
 
 				local coin, dist = pickCoin(root)
 				if not coin then
@@ -313,7 +358,8 @@ return function(Window, Library)
 				curTween:Play()
 				curTween.Completed:Wait()
 				visited[coin] = true
-				task.wait(0.12)
+				task.wait(0.3)
+				if coin.Parent then stuck = stuck + 1 else stuck = 0 end
 			end)
 			if not ok then task.wait(0.5) end
 		end
@@ -380,16 +426,16 @@ return function(Window, Library)
 	Tab:Toggle({ Name = "Lobby on Full Bag", Default = true, Flag = "mm2_baglobby", NoKey = true, Callback = function(v) S.BagLobby = v end })
 	Tab:Dropdown({
 		Name = "Farm Speed", Flag = "mm2_speed", Default = "Normal",
-		Options = { "Slow", "Normal", "Fast" },
+		Options = { "Slow", "Normal" },
 		Callback = function(v) farmSpeed = SPEEDS[v] or farmSpeed end,
 	})
 	Tab:Button("Check Bag", function()
-		local cur, max = bagState()
-		if cur then
-			Library.Notify("Bag", cur .. " / " .. max, "on")
-		else
-			Library.Notify("MM2", "Bag not readable", "on")
-		end
+		Library.Notify("Bag", bagFull() and "Full" or "Not full", "on")
+	end)
+	Tab:Button("Check Zone", function()
+		local ch = lp.Character
+		local root = ch and ch:FindFirstChild("HumanoidRootPart")
+		Library.Notify("Zone", inLobby(root) and "Lobby" or "Map", "on")
 	end)
 
 	local acc = 0
