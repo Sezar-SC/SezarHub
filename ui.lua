@@ -1,4 +1,4 @@
--- SezarHub UI library v2.2
+-- SezarHub UI library v2.5
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
@@ -6,9 +6,10 @@ local Debris = game:GetService("Debris")
 local HttpService = game:GetService("HttpService")
 
 local Library = {
-	_conns = {}, _tr = {}, OnUnload = {}, ToggleKey = Enum.KeyCode.RightShift,
+	_conns = {}, _tr = {}, _acc = {}, _grads = {}, OnUnload = {}, ToggleKey = Enum.KeyCode.RightShift,
 	Flags = {}, GFlags = {}, Setters = {}, Binding = false, AutoSave = false, Loading = false,
 	Lang = "English", Dict = {}, Version = "2.2", GameName = "UNIVERSAL",
+	IsPro = false, Animated = false, HubHex = "9646FF", DeviceClass = "Desktop",
 }
 
 local Theme = {
@@ -24,6 +25,7 @@ local Theme = {
 	SwitchOff = Color3.fromRGB(50, 42, 70),
 }
 Library.Theme = Theme
+Library.GradientSeq = ColorSequence.new(Theme.PurpleDark, Theme.Purple)
 
 local function create(class, props, parent)
 	local o = Instance.new(class)
@@ -38,6 +40,15 @@ local function tween(o, t, props, style, dir)
 	return tw
 end
 
+-- accent-colored tweens are applied directly while the theme is animated
+local function tweenc(o, t, props, style, dir)
+	if Library.Animated then
+		for k, v in pairs(props) do o[k] = v end
+		return
+	end
+	return tween(o, t, props, style, dir)
+end
+
 local function corner(o, r) return create("UICorner", { CornerRadius = UDim.new(0, r) }, o) end
 local function stroke(o, color, th)
 	return create("UIStroke", { Color = color, Thickness = th or 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, o)
@@ -47,6 +58,14 @@ function Library.Connect(signal, fn)
 	local c = signal:Connect(fn)
 	table.insert(Library._conns, c)
 	return c
+end
+
+function Library.RainbowSeq(h)
+	local kps = {}
+	for i = 0, 6 do
+		kps[i + 1] = ColorSequenceKeypoint.new(i / 6, Color3.fromHSV((h + i / 6) % 1, 0.8, 1))
+	end
+	return ColorSequence.new(kps)
 end
 
 -- ========== LANGUAGE ==========
@@ -119,6 +138,45 @@ local Gui = create("ScreenGui", {
 pcall(function() if syn and syn.protect_gui then syn.protect_gui(Gui) end end)
 Gui.Parent = parent
 Library.Gui = Gui
+
+-- ========== ACCENT REGISTRY (live theme / rainbow) ==========
+local function P() return Theme.Purple end
+local function PD() return Theme.PurpleDark end
+
+local function acc(obj, prop, fn)
+	table.insert(Library._acc, { o = obj, p = prop, f = fn })
+	return obj
+end
+
+local function grad(target, rotation)
+	local g = create("UIGradient", { Color = Library.GradientSeq, Rotation = rotation or 0 }, target)
+	table.insert(Library._grads, g)
+	return g
+end
+
+local refreshCount = 0
+function Library.RefreshAccent()
+	refreshCount = refreshCount + 1
+	local clean = (refreshCount % 100 == 0)
+	local list = Library._acc
+	for i = #list, 1, -1 do
+		local r = list[i]
+		if clean and not r.o:IsDescendantOf(Gui) then
+			table.remove(list, i)
+		else
+			pcall(function() r.o[r.p] = r.f() end)
+		end
+	end
+	local gl = Library._grads
+	for i = #gl, 1, -1 do
+		local g = gl[i]
+		if clean and not g:IsDescendantOf(Gui) then
+			table.remove(gl, i)
+		else
+			pcall(function() g.Color = Library.GradientSeq end)
+		end
+	end
+end
 
 -- ========== CONFIG (per game + global) ==========
 local CFG_FOLDER = "SezarHub"
@@ -220,20 +278,21 @@ function Library.Notify(title, sub, kind, dur)
 end
 
 -- ========== EFFECTS ==========
-local function burst(center, W, H, host)
+local function burst(center, W, H, host, count, rainbow)
 	host = host or Gui
+	count = count or 44
 	local ring = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(center.X, center.Y),
 		Size = UDim2.fromOffset(120, 120), BackgroundTransparency = 1, ZIndex = 40,
 	}, host)
 	corner(ring, 600)
-	local rs = stroke(ring, Theme.Purple, 4)
+	local rs = stroke(ring, rainbow and Color3.fromHSV(math.random(), 0.8, 1) or Theme.Purple, 4)
 	tween(ring, 0.8, { Size = UDim2.fromOffset(1000, 1000) })
 	tween(rs, 0.8, { Transparency = 1 })
 	Debris:AddItem(ring, 1)
 
 	local hw, hh = math.floor(W / 2), math.floor(H / 2)
-	for i = 1, 44 do
+	for i = 1, count do
 		local side = math.random(1, 4)
 		local px, py
 		if side == 1 then px = math.random(-hw, hw); py = -hh
@@ -244,9 +303,12 @@ local function burst(center, W, H, host)
 		dir = (dir.Magnitude > 0) and dir.Unit or Vector2.new(0, -1)
 		local dist = math.random(70, 200)
 		local s = math.random(4, 10)
+		local pcol
+		if rainbow then pcol = Color3.fromHSV(math.random(), 0.8, 1)
+		else pcol = (i % 3 == 0) and Color3.new(1, 1, 1) or Theme.Purple end
 		local p = create("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5), BorderSizePixel = 0, ZIndex = 45,
-			BackgroundColor3 = (i % 3 == 0) and Color3.new(1, 1, 1) or Theme.Purple,
+			BackgroundColor3 = pcol,
 			Size = UDim2.fromOffset(s, s), Rotation = math.random(0, 90),
 			Position = UDim2.fromOffset(center.X + px, center.Y + py),
 		}, host)
@@ -265,17 +327,22 @@ local function popIn(page, startScale)
 		local s = c:FindFirstChild("S")
 		if s then
 			i = i + 1
-			s.Scale = startScale or 0.7
-			task.delay(i * 0.045, function()
-				tween(s, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
-			end)
+			if i <= 10 then
+				s.Scale = startScale or 0.7
+				task.delay(i * 0.045, function()
+					tween(s, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
+				end)
+			end
 		end
 	end
 end
 
--- ========== WELCOME SPLASH ==========
+-- ========== WELCOME SPLASH (Free: classic, Pro: rainbow) ==========
 function Library.Splash(duration, welcomeText)
-	duration = duration or 2.6
+	local pro = Library.IsPro == true
+	duration = duration or (pro and 3.4 or 2.6)
+	local lite = Library.DeviceClass == "Touch"
+
 	local overlay = create("Frame", {
 		Name = "Splash", Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(6, 4, 12),
 		BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 200, Active = true,
@@ -291,23 +358,27 @@ function Library.Splash(duration, welcomeText)
 		create("UIScale", { Scale = math.clamp(vx / 800, 0.45, 1) }, box)
 
 		local welcome = create("TextLabel", {
-			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), Font = Enum.Font.GothamBold,
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 136 or 0),
+			Size = UDim2.new(1, 0, 0, pro and 46 or 34), Font = Enum.Font.GothamBold,
 			TextSize = 24, TextColor3 = Theme.Purple, TextTransparency = 1, Text = "",
 		}, box)
-		if type(welcomeText) == "string" and welcomeText ~= "" then
+		local wScale, wGrad
+		if pro then
+			welcome.Font = Enum.Font.SourceSansBold
+			welcome.TextSize = 38
+			welcome.TextColor3 = Color3.new(1, 1, 1)
+			welcome.Text = (type(welcomeText) == "string" and welcomeText ~= "") and welcomeText or "Ho\u{15F} geldiniz, Efendim"
+			wScale = create("UIScale", { Scale = 0 }, welcome)
+			wGrad = create("UIGradient", { Color = Library.RainbowSeq(0), Rotation = 0 }, welcome)
+		elseif type(welcomeText) == "string" and welcomeText ~= "" then
 			welcome.Text = welcomeText
 		else
 			reg(welcome, "WELCOME")
 			table.remove(Library._tr, #Library._tr) -- splash label is temporary
 		end
-		create("UIGradient", {
-			Name = "SezarThemeGradient",
-			Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
-			Rotation = 0,
-		}, welcome)
 
 		local row = create("Frame", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 40), Size = UDim2.new(1, 0, 0, 100),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 10 or 40), Size = UDim2.new(1, 0, 0, 100),
 		}, box)
 		create("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
@@ -322,36 +393,73 @@ function Library.Splash(duration, welcomeText)
 				Font = Enum.Font.GothamBlack, TextSize = 84, Text = word:sub(i, i), LayoutOrder = i,
 				TextColor3 = (i <= 5) and Color3.new(1, 1, 1) or Theme.Purple, TextTransparency = 1,
 			}, row)
-			local s = create("UIScale", { Scale = 0 }, l)
+			local s = create("UIScale", { Scale = pro and 2.4 or 0 }, l)
 			letters[i] = { l, s }
 		end
 
 		local line = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 152),
-			Size = UDim2.fromOffset(0, 3), BackgroundColor3 = Theme.Purple, BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, pro and 122 or 152),
+			Size = UDim2.fromOffset(0, 3), BackgroundColor3 = pro and Color3.new(1, 1, 1) or Theme.Purple, BorderSizePixel = 0,
 		}, box)
 		corner(line, 2)
+		local lGrad
+		if pro then lGrad = create("UIGradient", { Color = Library.RainbowSeq(0), Rotation = 0 }, line) end
 
 		local sub = create("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 168), Size = UDim2.new(1, 0, 0, 24),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(0, pro and 190 or 168), Size = UDim2.new(1, 0, 0, 24),
 			Font = fontFor(Enum.Font.GothamMedium), TextSize = sizeFor(15), TextColor3 = Theme.Sub, TextTransparency = 1,
 			Text = Library.T("Developer") .. ": Sezar   |   v" .. Library.Version,
 		}, box)
 
-		tween(overlay, 0.4, { BackgroundTransparency = 0.05 }, Enum.EasingStyle.Quad)
-		tween(welcome, 0.5, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
-		for i, pair in ipairs(letters) do
-			task.delay(0.25 + i * 0.08, function()
-				tween(pair[2], 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
-				tween(pair[1], 0.3, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
+		-- Pro: continuous rainbow flow on letters, message and line
+		if pro then
+			task.spawn(function()
+				while overlay.Parent do
+					local h = (os.clock() * 0.35) % 1
+					for i, pair in ipairs(letters) do
+						pair[1].TextColor3 = Color3.fromHSV((h + (i - 1) * 0.07) % 1, 0.75, 1)
+					end
+					local seq = Library.RainbowSeq(h)
+					wGrad.Color = seq
+					lGrad.Color = seq
+					task.wait(lite and 0.05 or 0.03)
+				end
 			end)
 		end
-		task.delay(0.6, function()
+
+		tween(overlay, 0.4, { BackgroundTransparency = 0.05 }, Enum.EasingStyle.Quad)
+		if not pro then tween(welcome, 0.5, { TextTransparency = 0 }, Enum.EasingStyle.Quad) end
+
+		for i, pair in ipairs(letters) do
+			if pro then
+				task.delay(0.2 + i * 0.07, function()
+					tween(pair[2], 0.6, { Scale = 1 }, Enum.EasingStyle.Quint)
+					tween(pair[1], 0.35, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
+				end)
+			else
+				task.delay(0.25 + i * 0.08, function()
+					tween(pair[2], 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
+					tween(pair[1], 0.3, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
+				end)
+			end
+		end
+
+		task.delay(pro and 0.5 or 0.6, function()
 			local c = Vector2.new(Gui.AbsoluteSize.X / 2, Gui.AbsoluteSize.Y / 2)
-			pcall(burst, c, 520, 110, overlay)
+			pcall(burst, c, 520, 110, overlay, lite and 12 or 44, pro)
 		end)
-		task.delay(0.95, function() tween(line, 0.6, { Size = UDim2.fromOffset(480, 3) }, Enum.EasingStyle.Quart) end)
-		task.delay(1.2, function() tween(sub, 0.5, { TextTransparency = 0 }, Enum.EasingStyle.Quad) end)
+		task.delay(pro and 0.9 or 0.95, function()
+			tween(line, 0.6, { Size = UDim2.fromOffset(pro and 560 or 480, 3) }, Enum.EasingStyle.Quart)
+		end)
+		if pro then
+			task.delay(1.2, function()
+				tween(wScale, 0.6, { Scale = 1 }, Enum.EasingStyle.Back)
+				tween(welcome, 0.4, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
+			end)
+			task.delay(1.7, function() tween(sub, 0.5, { TextTransparency = 0 }, Enum.EasingStyle.Quad) end)
+		else
+			task.delay(1.2, function() tween(sub, 0.5, { TextTransparency = 0 }, Enum.EasingStyle.Quad) end)
+		end
 
 		task.wait(duration)
 
@@ -368,7 +476,24 @@ end
 
 -- ========== WINDOW ==========
 function Library.CreateWindow()
-	local W, H = 660, 430
+	local function viewport()
+		local v = Gui.AbsoluteSize
+		if v.X <= 0 or v.Y <= 0 then
+			local cam = workspace.CurrentCamera
+			if cam then v = cam.ViewportSize end
+		end
+		if v.X <= 0 or v.Y <= 0 then v = Vector2.new(1280, 720) end
+		return v
+	end
+
+	local vp = viewport()
+	local compact = (UIS.TouchEnabled and not UIS.KeyboardEnabled) or vp.X < 720
+	Library.DeviceClass = compact and "Touch" or "Desktop"
+
+	local W = math.max(280, math.min(660, vp.X - 24))
+	local H = math.max(260, math.min(430, vp.Y - 32))
+	local function RH() return compact and 50 or 42 end
+
 	local Window = {}
 	local tabs, current = {}, nil
 	local isOpen = false
@@ -381,68 +506,55 @@ function Library.CreateWindow()
 	}, Gui)
 	corner(Main, 12)
 	local MainStroke = stroke(Main, Theme.Purple, 2)
+	if Library.IsPro then
+		MainStroke.Color = Color3.new(1, 1, 1)
+		grad(MainStroke, 45)
+	else
+		acc(MainStroke, "Color", P)
+	end
 	local Scale = create("UIScale", { Scale = 0 }, Main)
-	local compact = false
 
 	local Header = create("Frame", {
 		BackgroundColor3 = Theme.Panel, Size = UDim2.new(1, 0, 0, 50), BorderSizePixel = 0,
 	}, Main)
 	corner(Header, 12)
-	create("UIGradient", {
-		Name = "SezarThemeGradient",
-		Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
-		Rotation = 0,
-	}, Header)
 	create("Frame", {
 		BackgroundColor3 = Theme.Panel, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0),
 		Size = UDim2.new(1, 0, 0, 12), BorderSizePixel = 0,
 	}, Header)
+	if Library.IsPro then
+		local strip = create("Frame", {
+			BackgroundColor3 = Color3.new(1, 1, 1), AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 3), BorderSizePixel = 0,
+		}, Header)
+		grad(strip, 0)
+	end
 
 	local plate = create("Frame", {
 		BackgroundColor3 = Color3.fromRGB(240, 236, 250), Position = UDim2.fromOffset(14, 11),
 		Size = UDim2.fromOffset(104, 28), BorderSizePixel = 0,
 	}, Header)
 	corner(plate, 7)
-	create("UIGradient", {
-		Name = "SezarThemeGradient",
-		Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
-		Rotation = 0,
-	}, plate)
+	if Library.IsPro then grad(plate, 0) end
 	Library.LogoLabel = create("TextLabel", {
 		BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.GothamBlack,
 		TextSize = 18, RichText = true,
-		Text = '<font color="#000000">Sezar</font><font color="#9646FF">Hub</font>',
+		Text = '<font color="#000000">Sezar</font><font color="#' .. tostring(Library.HubHex) .. '">Hub</font>',
 	}, plate)
 	create("TextLabel", {
 		BackgroundTransparency = 1, Position = UDim2.fromOffset(128, 0), Size = UDim2.new(1, -190, 1, 0),
 		Font = Enum.Font.GothamMedium, TextSize = 12, TextColor3 = Theme.Sub,
 		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-		Text = "v" .. Library.Version .. "  |  " .. Library.GameName,
+		Text = "v" .. Library.Version .. "  |  " .. Library.GameName .. (Library.IsPro and "  |  PRO" or ""),
 	}, Header)
 
 	local Close = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(30, 30),
+		AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
+		Size = UDim2.fromOffset(compact and 40 or 30, compact and 40 or 30),
 		BackgroundColor3 = Theme.Item, Text = "X", Font = Enum.Font.GothamBold, TextSize = 14,
 		TextColor3 = Theme.Text, AutoButtonColor = false,
 	}, Header)
 	corner(Close, 8)
-	local function fitWindow()
-		local viewport = Gui.AbsoluteSize
-		if viewport.X <= 0 or viewport.Y <= 0 then
-			local camera = workspace.CurrentCamera
-			if camera then viewport = camera.ViewportSize end
-		end
-		if viewport.X <= 0 or viewport.Y <= 0 then return end
-		compact = UIS.TouchEnabled or viewport.X < 720
-		W = math.max(280, math.min(660, viewport.X - 24))
-		H = math.max(280, math.min(430, viewport.Y - 32))
-		Main.Size = UDim2.fromOffset(W, H)
-		Close.Size = UDim2.fromOffset(compact and 40 or 30, compact and 40 or 30)
-		Library.DeviceClass = compact and "Touch" or "Desktop"
-		if Library.RefreshTabSizes then Library.RefreshTabSizes() end
-	end
-	fitWindow()
-	Library.Connect(Gui:GetPropertyChangedSignal("AbsoluteSize"), fitWindow)
 	Close.MouseEnter:Connect(function() tween(Close, 0.15, { BackgroundColor3 = Theme.Off }) end)
 	Close.MouseLeave:Connect(function() tween(Close, 0.15, { BackgroundColor3 = Theme.Item }) end)
 
@@ -462,17 +574,28 @@ function Library.CreateWindow()
 		end
 	end)
 
-	local TabBar = create("Frame", {
+	local TabBar = create("ScrollingFrame", {
 		BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 50), Size = UDim2.new(1, 0, 0, 40),
+		BorderSizePixel = 0, ScrollBarThickness = 0, ScrollingDirection = Enum.ScrollingDirection.X,
+		CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.X,
 	}, Main)
-	create("UIListLayout", {
-		FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	local TabLayout = create("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = compact and Enum.HorizontalAlignment.Left or Enum.HorizontalAlignment.Center,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, TabBar)
-	create("Frame", {
+
+	local divider = create("Frame", {
 		BackgroundColor3 = Theme.PurpleDark, Position = UDim2.fromOffset(14, 90),
 		Size = UDim2.new(1, -28, 0, 1), BorderSizePixel = 0,
 	}, Main)
+	if Library.IsPro then
+		divider.BackgroundColor3 = Color3.new(1, 1, 1)
+		divider.Size = UDim2.new(1, -28, 0, 2)
+		grad(divider, 0)
+	else
+		acc(divider, "BackgroundColor3", PD)
+	end
 
 	local Content = create("Frame", {
 		BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 92), Size = UDim2.new(1, 0, 1, -92),
@@ -480,13 +603,29 @@ function Library.CreateWindow()
 	}, Main)
 
 	function Library.RefreshTabSizes()
-		local count = math.max(5, #tabs)
-		local width = compact and math.max(54, math.floor((Main.AbsoluteSize.X - 12) / count)) or 96
+		local count = math.max(1, #tabs)
+		local share = math.floor((W - 12) / count)
+		local width = compact and math.max(64, share) or math.max(72, math.min(96, share))
 		for _, tab in ipairs(tabs) do
 			tab.Btn.Size = UDim2.new(0, width, 1, 0)
-			tab.Btn.TextSize = compact and 11 or 14
+			tab.Btn.TextSize = compact and 12 or 14
 		end
 	end
+
+	local function fitWindow()
+		local v = viewport()
+		compact = (UIS.TouchEnabled and not UIS.KeyboardEnabled) or v.X < 720
+		W = math.max(280, math.min(660, v.X - 24))
+		H = math.max(260, math.min(430, v.Y - 32))
+		Main.Size = UDim2.fromOffset(W, H)
+		Close.Size = UDim2.fromOffset(compact and 40 or 30, compact and 40 or 30)
+		TabLayout.HorizontalAlignment = compact and Enum.HorizontalAlignment.Left or Enum.HorizontalAlignment.Center
+		NotifHolder.Size = UDim2.new(0, math.max(200, math.min(290, v.X - 32)), 1, -32)
+		Library.DeviceClass = compact and "Touch" or "Desktop"
+		Library.RefreshTabSizes()
+	end
+	fitWindow()
+	Library.Connect(Gui:GetPropertyChangedSignal("AbsoluteSize"), fitWindow)
 
 	local function selectTab(t)
 		for _, o in ipairs(tabs) do
@@ -531,6 +670,7 @@ function Library.CreateWindow()
 			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Font = Enum.Font.GothamBold,
 			TextSize = 12, TextColor3 = Theme.Purple, TextXAlignment = Enum.TextXAlignment.Left, Text = text,
 		}, f)
+		acc(l, "TextColor3", P)
 		reg(l, text, { upper = true })
 	end
 
@@ -554,32 +694,38 @@ function Library.CreateWindow()
 
 	-- Toggle: {Name, Default, Flag, Key (Enum.KeyCode), NoKey, Callback}
 	function Tab:Toggle(o)
-		local f = item(self, 42)
+		local f = item(self, RH())
 		local nameLbl = create("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -150, 1, 0),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = o.Name,
 		}, f)
 		reg(nameLbl, o.Name)
-		local sw = create("Frame", {
-			AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0),
-			Size = UDim2.fromOffset(46, 24), BackgroundColor3 = Theme.SwitchOff, BorderSizePixel = 0,
-		}, f)
-		corner(sw, 12)
-		local knob = create("Frame", {
-			Position = UDim2.fromOffset(3, 3), Size = UDim2.fromOffset(18, 18),
-			BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
-		}, sw)
-		corner(knob, 9)
-		local btn = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0) }, f)
 
 		local state = false
 		local keyName = o.Key and o.Key.Name or nil
 		local keyBtn
 
+		local sw = create("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0),
+			Size = UDim2.fromOffset(compact and 52 or 46, compact and 28 or 24),
+			BackgroundColor3 = Theme.SwitchOff, BorderSizePixel = 0,
+		}, f)
+		corner(sw, 14)
+		acc(sw, "BackgroundColor3", function() return state and Theme.Purple or Theme.SwitchOff end)
+		local ks = compact and 22 or 18
+		local kOff = 3
+		local kOn = (compact and 52 or 46) - ks - 3
+		local knob = create("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, kOff, 0.5, 0), Size = UDim2.fromOffset(ks, ks),
+			BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
+		}, sw)
+		corner(knob, 12)
+		local btn = create("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0) }, f)
+
 		local function visual(v)
-			tween(sw, 0.25, { BackgroundColor3 = v and Theme.Purple or Theme.SwitchOff })
-			tween(knob, 0.3, { Position = v and UDim2.fromOffset(25, 3) or UDim2.fromOffset(3, 3) }, Enum.EasingStyle.Back)
+			tweenc(sw, 0.25, { BackgroundColor3 = v and Theme.Purple or Theme.SwitchOff })
+			tween(knob, 0.3, { Position = UDim2.new(0, v and kOn or kOff, 0.5, 0) }, Enum.EasingStyle.Back)
 		end
 
 		local function set(v, silent)
@@ -601,14 +747,16 @@ function Library.CreateWindow()
 		btn.MouseEnter:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.ItemHover }) end)
 		btn.MouseLeave:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.Item }) end)
 
-		if not o.NoKey then
+		-- keybinds only make sense with a keyboard
+		if not o.NoKey and UIS.KeyboardEnabled then
 			keyBtn = create("TextButton", {
 				AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -72, 0.5, 0), Size = UDim2.fromOffset(62, 22),
 				BackgroundColor3 = Theme.Panel, Text = keyName or "-", Font = Enum.Font.GothamBold, TextSize = 11,
 				TextColor3 = Theme.Sub, AutoButtonColor = false, TextTruncate = Enum.TextTruncate.AtEnd,
 			}, f)
 			corner(keyBtn, 6)
-			stroke(keyBtn, Theme.PurpleDark, 1)
+			acc(stroke(keyBtn, Theme.PurpleDark, 1), "Color", PD)
+			acc(keyBtn, "TextColor3", function() return keyName and Theme.Purple or Theme.Sub end)
 
 			local function setKey(name)
 				if name == "None" or name == nil then keyName = nil else keyName = name end
@@ -661,32 +809,41 @@ function Library.CreateWindow()
 	function Tab:Slider(o)
 		local min, max = o.Min, o.Max
 		local hardMax = o.HardMax or max
-		local f = item(self, 60)
+		local h = compact and 72 or 60
+		local f = item(self, h)
 		local nameLbl = create("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -110, 0, 22),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -110, 0, 24),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = o.Name,
 		}, f)
 		reg(nameLbl, o.Name)
 		local box = create("TextBox", {
-			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 6), Size = UDim2.fromOffset(70, 24),
+			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 6),
+			Size = UDim2.fromOffset(70, compact and 30 or 24),
 			BackgroundColor3 = Theme.Panel, Text = tostring(o.Default), TextColor3 = Theme.Text,
 			Font = Enum.Font.GothamBold, TextSize = 13, ClearTextOnFocus = false,
 		}, f)
 		corner(box, 6)
-		stroke(box, Theme.PurpleDark, 1)
-		local bar = create("Frame", {
-			Position = UDim2.new(0, 14, 0, 40), Size = UDim2.new(1, -28, 0, 8),
-			BackgroundColor3 = Theme.Panel, BorderSizePixel = 0,
+		acc(stroke(box, Theme.PurpleDark, 1), "Color", PD)
+
+		-- taller invisible hit area so touch dragging is easy
+		local hit = create("Frame", {
+			BackgroundTransparency = 1, Position = UDim2.new(0, 14, 0, h - 34), Size = UDim2.new(1, -28, 0, 30),
 		}, f)
+		local bar = create("Frame", {
+			AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.new(1, 0, 0, 8),
+			BackgroundColor3 = Theme.Panel, BorderSizePixel = 0,
+		}, hit)
 		corner(bar, 4)
 		local fill = create("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = Theme.Purple, BorderSizePixel = 0 }, bar)
 		corner(fill, 4)
+		acc(fill, "BackgroundColor3", P)
 		local knob = create("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.fromOffset(16, 16),
+			AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, 0, 0.5, 0),
+			Size = UDim2.fromOffset(compact and 22 or 16, compact and 22 or 16),
 			BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
 		}, fill)
-		corner(knob, 8)
+		corner(knob, 11)
 
 		local value = o.Default
 		local function setValue(v, animate)
@@ -716,7 +873,7 @@ function Library.CreateWindow()
 			local a = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
 			setValue(min + a * (max - min), false)
 		end
-		bar.InputBegan:Connect(function(i)
+		hit.InputBegan:Connect(function(i)
 			if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
 				sliding = true
 				fromInput(i.Position.X)
@@ -748,20 +905,24 @@ function Library.CreateWindow()
 	-- Dropdown: {Name, Options (table or function), Default, Flag, Global, Callback}
 	function Tab:Dropdown(o)
 		local store = o.Global and Library.GFlags or Library.Flags
-		local f = item(self, 42)
+		local dh = RH()
+		local selH = compact and 32 or 24
+		local itemH = compact and 34 or 26
+		local f = item(self, dh)
 		f.ClipsDescendants = true
 		local nameLbl = create("TextLabel", {
-			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -190, 0, 42),
+			BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -190, 0, dh),
 			Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = Theme.Text,
 			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = o.Name,
 		}, f)
 		reg(nameLbl, o.Name)
 		local sel = create("TextButton", {
-			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 9), Size = UDim2.fromOffset(150, 24),
+			AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, math.floor((dh - selH) / 2)),
+			Size = UDim2.fromOffset(150, selH),
 			BackgroundColor3 = Theme.Panel, Text = "", AutoButtonColor = false,
 		}, f)
 		corner(sel, 6)
-		stroke(sel, Theme.PurpleDark, 1)
+		acc(stroke(sel, Theme.PurpleDark, 1), "Color", PD)
 		local selText = create("TextLabel", {
 			BackgroundTransparency = 1, Position = UDim2.fromOffset(8, 0), Size = UDim2.new(1, -28, 1, 0),
 			Font = Enum.Font.SourceSansSemibold, TextSize = 15, TextColor3 = Theme.Text,
@@ -772,11 +933,13 @@ function Library.CreateWindow()
 			Size = UDim2.fromOffset(16, 16), Font = Enum.Font.GothamBold, TextSize = 12,
 			TextColor3 = Theme.Purple, Text = "v",
 		}, sel)
+		acc(arrow, "TextColor3", P)
 		local list = create("ScrollingFrame", {
-			Position = UDim2.fromOffset(14, 46), Size = UDim2.new(1, -28, 0, 0), BackgroundColor3 = Theme.Panel,
+			Position = UDim2.fromOffset(14, dh + 4), Size = UDim2.new(1, -28, 0, 0), BackgroundColor3 = Theme.Panel,
 			BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Purple,
 			CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		}, f)
+		acc(list, "ScrollBarImageColor3", P)
 		corner(list, 6)
 		create("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder }, list)
 		create("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingLeft = UDim.new(0, 2) }, list)
@@ -804,11 +967,12 @@ function Library.CreateWindow()
 			opts = opts or {}
 			for idx, name in ipairs(opts) do
 				local b = create("TextButton", {
-					Size = UDim2.new(1, -8, 0, 26), BackgroundColor3 = Theme.Item, Text = tostring(name),
+					Size = UDim2.new(1, -8, 0, itemH), BackgroundColor3 = Theme.Item, Text = tostring(name),
 					Font = Enum.Font.SourceSansSemibold, TextSize = 15, AutoButtonColor = false, LayoutOrder = idx,
 					TextColor3 = (name == value) and Theme.Purple or Theme.Text,
 				}, list)
 				corner(b, 6)
+				acc(b, "TextColor3", function() return (name == value) and Theme.Purple or Theme.Text end)
 				b.MouseEnter:Connect(function() tween(b, 0.12, { BackgroundColor3 = Theme.ItemHover }) end)
 				b.MouseLeave:Connect(function() tween(b, 0.12, { BackgroundColor3 = Theme.Item }) end)
 				b.MouseButton1Click:Connect(function()
@@ -822,14 +986,14 @@ function Library.CreateWindow()
 		local function open()
 			opened = true
 			local n = populate()
-			local listH = math.max(1, math.min(n, 5)) * 28 + 4
+			local listH = math.max(1, math.min(n, 5)) * (itemH + 2) + 4
 			list.Size = UDim2.new(1, -28, 0, listH)
-			tween(f, 0.3, { Size = UDim2.new(1, 0, 0, 54 + listH) }, Enum.EasingStyle.Back)
+			tween(f, 0.3, { Size = UDim2.new(1, 0, 0, dh + 12 + listH) }, Enum.EasingStyle.Back)
 			tween(arrow, 0.25, { Rotation = 180 })
 		end
 		function close()
 			opened = false
-			tween(f, 0.25, { Size = UDim2.new(1, 0, 0, 42) })
+			tween(f, 0.25, { Size = UDim2.new(1, 0, 0, dh) })
 			tween(arrow, 0.25, { Rotation = 0 })
 		end
 		sel.MouseButton1Click:Connect(function()
@@ -841,23 +1005,33 @@ function Library.CreateWindow()
 			Library.Setters[o.Flag] = function(v) setValue(v, true) end
 		end
 		if value ~= nil then setValue(value, true) end
-		return { Set = function(v) setValue(v) end, Refresh = populate }
+		return { Set = function(v, silent) setValue(v, silent) end, Refresh = populate }
 	end
 
 	function Tab:Button(text, cb)
-		local f = item(self, 40)
+		local f = item(self, compact and 48 or 40)
+		local hover = false
 		local btn = create("TextButton", {
 			Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = text,
 			Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Theme.Purple, AutoButtonColor = false,
 		}, f)
+		acc(btn, "TextColor3", function() return hover and Color3.new(1, 1, 1) or Theme.Purple end)
+		acc(f, "BackgroundColor3", function() return hover and Theme.PurpleDark or Theme.Item end)
 		reg(btn, text)
-		btn.MouseEnter:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.PurpleDark }); tween(btn, 0.15, { TextColor3 = Color3.new(1, 1, 1) }) end)
-		btn.MouseLeave:Connect(function() tween(f, 0.15, { BackgroundColor3 = Theme.Item }); tween(btn, 0.15, { TextColor3 = Theme.Purple }) end)
+		local function paint()
+			tweenc(f, 0.15, { BackgroundColor3 = hover and Theme.PurpleDark or Theme.Item })
+			tweenc(btn, 0.15, { TextColor3 = hover and Color3.new(1, 1, 1) or Theme.Purple })
+		end
+		btn.MouseEnter:Connect(function() hover = true; paint() end)
+		btn.MouseLeave:Connect(function() hover = false; paint() end)
 		btn.MouseButton1Click:Connect(function()
 			local s = f.S
 			s.Scale = 0.94
 			tween(s, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
 			safe(cb)
+			if compact then
+				task.delay(0.25, function() hover = false; paint() end)
+			end
 		end)
 	end
 
@@ -875,15 +1049,18 @@ function Library.CreateWindow()
 			Size = UDim2.new(0, 0, 0, 3), BorderSizePixel = 0,
 		}, t.Btn)
 		corner(t.Line, 2)
+		acc(t.Line, "BackgroundColor3", P)
 		t.Page = create("ScrollingFrame", {
 			BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), BorderSizePixel = 0,
-			ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.Purple, Visible = false,
+			ScrollBarThickness = compact and 2 or 3, ScrollBarImageColor3 = Theme.Purple, Visible = false,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
 			CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		}, Content)
+		acc(t.Page, "ScrollBarImageColor3", P)
 		create("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, t.Page)
 		create("UIPadding", {
 			PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-			PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16),
+			PaddingLeft = UDim.new(0, compact and 12 or 16), PaddingRight = UDim.new(0, compact and 12 or 16),
 		}, t.Page)
 		t.Btn.MouseButton1Click:Connect(function() if current ~= t then selectTab(t) end end)
 		table.insert(tabs, t)
@@ -901,13 +1078,15 @@ function Library.CreateWindow()
 			firstOpen = false
 			Scale.Scale = 0
 			tween(Scale, 0.65, { Scale = 1 }, Enum.EasingStyle.Back)
-			MainStroke.Color = Color3.new(1, 1, 1)
-			tween(MainStroke, 0.8, { Color = Theme.Purple })
+			if not Library.IsPro then
+				MainStroke.Color = Color3.new(1, 1, 1)
+				tween(MainStroke, 0.8, { Color = Theme.Purple })
+			end
 			local c = Vector2.new(
 				Gui.AbsoluteSize.X * Main.Position.X.Scale + Main.Position.X.Offset,
 				Gui.AbsoluteSize.Y * Main.Position.Y.Scale + Main.Position.Y.Offset
 			)
-			task.spawn(function() pcall(burst, c, W, H) end)
+			task.spawn(function() pcall(burst, c, W, H, Gui, compact and 14 or 44, Library.IsPro) end)
 			for i, t in ipairs(tabs) do
 				local s = t.Btn.S
 				s.Scale = 0
@@ -917,7 +1096,7 @@ function Library.CreateWindow()
 				task.delay(0.3, function() selectTab(tabs[1]) end)
 			end
 		else
-			-- light toggle (RightShift): no particles, no pop-ins
+			-- light toggle (RightShift / mobile button): no particles, no pop-ins
 			Scale.Scale = 0.9
 			tween(Scale, 0.18, { Scale = 1 }, Enum.EasingStyle.Quad)
 		end
@@ -946,20 +1125,24 @@ function Library.CreateWindow()
 	Library.Connect(UIS.InputBegan, function(i, gp)
 		if not gp and not Library.Binding and i.KeyCode == Library.ToggleKey then Window:Toggle() end
 	end)
+
+	-- Touch button: shows only while the menu is hidden
 	MobileToggle = create("TextButton", {
 		Name = "SezarHubMobileToggle", AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -18, 1, -24), Size = UDim2.fromOffset(52, 52),
+		Position = UDim2.new(1, -18, 1, -24), Size = UDim2.fromOffset(56, 56),
 		BackgroundColor3 = Theme.Panel, Text = "SH", TextColor3 = Theme.Purple,
-		Font = Enum.Font.GothamBlack, TextSize = 16, AutoButtonColor = true,
-		Visible = UIS.TouchEnabled,
+		Font = Enum.Font.GothamBlack, TextSize = 17, AutoButtonColor = true,
+		Visible = false,
 	}, Gui)
-	corner(MobileToggle, 26)
-	stroke(MobileToggle, Theme.Purple, 2)
-	create("UIGradient", {
-		Name = "SezarThemeGradient",
-		Color = Library.ThemeGradient or ColorSequence.new(Theme.PurpleDark, Theme.Purple),
-		Rotation = 35,
-	}, MobileToggle)
+	corner(MobileToggle, 28)
+	acc(MobileToggle, "TextColor3", P)
+	local mts = stroke(MobileToggle, Theme.Purple, 2)
+	if Library.IsPro then
+		mts.Color = Color3.new(1, 1, 1)
+		grad(mts, 45)
+	else
+		acc(mts, "Color", P)
+	end
 	MobileToggle.MouseButton1Click:Connect(function() Window:Toggle() end)
 	Library.MobileToggle = MobileToggle
 
