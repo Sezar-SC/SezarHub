@@ -732,7 +732,7 @@ return function(Window, Library)
 				elseif farmMode == "Teleport" then
 					done = stepTo(root, coin.Position, S.Avoid, id)
 				else
-					done = goTo(root, coin.CFrame, S.Avoid, id)
+					done = goToCoin(root, coin, S.Avoid, id)
 				end
 
 				if done then
