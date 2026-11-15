@@ -221,10 +221,22 @@ return function(Window, Library)
 		return math.abs(rel.X) <= h.X and math.abs(rel.Y) <= h.Y and math.abs(rel.Z) <= h.Z
 	end
 
+	local holdBV
 	local function setAnchor(v)
 		local ch = lp.Character
 		local r = ch and ch:FindFirstChild("HumanoidRootPart")
-		if r then pcall(function() r.Anchored = v end) end
+		if v then
+			if r and (not holdBV or holdBV.Parent ~= r) then
+				if holdBV then pcall(function() holdBV:Destroy() end) end
+				holdBV = Instance.new("BodyVelocity")
+				holdBV.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+				holdBV.Velocity = Vector3.zero
+				holdBV.Parent = r
+			end
+		elseif holdBV then
+			pcall(function() holdBV:Destroy() end)
+			holdBV = nil
+		end
 	end
 
 	local function grabGun()
@@ -471,7 +483,7 @@ return function(Window, Library)
 	local lastGun = nil
 	local visited = setmetatable({}, { __mode = "k" })
 	local lastCont = nil
-	local STEP = 10
+	local STEP = 5
 
 	local function segDist(a, b, p)
 		local ab = b - a
@@ -544,7 +556,7 @@ return function(Window, Library)
 				if mr and (mr.Position - root.Position).Magnitude < 28 then return false end
 			end
 			root.CFrame = CFrame.new(root.Position + d.Unit * math.min(STEP, dist))
-			task.wait(0.15)
+			task.wait(0.2)
 		end
 		return false
 	end
@@ -573,8 +585,12 @@ return function(Window, Library)
 	local function collectUnderground(root, coin, id)
 		local p = coin.Position
 		setAnchor(true)
+		for _, d in ipairs(root.Parent:GetChildren()) do
+			if d:IsA("BasePart") then d.CanCollide = false end
+		end
 		if not goTo(root, CFrame.new(p.X, p.Y - 9, p.Z), false, id) then return false end
-		if not goTo(root, CFrame.new(p.X, p.Y - 2.5, p.Z), false, id) then return false end
+		if not goTo(root, CFrame.new(p.X, p.Y - 0.5, p.Z), false, id) then return false end
+		task.wait(0.1)
 		if firetouchinterest then
 			pcall(function()
 				firetouchinterest(root, coin, 0)
