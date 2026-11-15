@@ -1,4 +1,4 @@
--- MM2 game tab v3
+-- MM2 game tab v4
 return function(Window, Library)
 	local Players = game:GetService("Players")
 	local RunService = game:GetService("RunService")
@@ -221,6 +221,12 @@ return function(Window, Library)
 		return math.abs(rel.X) <= h.X and math.abs(rel.Y) <= h.Y and math.abs(rel.Z) <= h.Z
 	end
 
+	local function setAnchor(v)
+		local ch = lp.Character
+		local r = ch and ch:FindFirstChild("HumanoidRootPart")
+		if r then pcall(function() r.Anchored = v end) end
+	end
+
 	local function grabGun()
 		local part = findGunPart()
 		local ch = lp.Character
@@ -345,7 +351,6 @@ return function(Window, Library)
 		equip(gun)
 		gun = getTool("Gun") or gun
 
-		-- wall in the way: briefly stand at a clear spot near the murderer
 		local old
 		if not hasLOS(root.Position, mr) then
 			for _, off in ipairs(SHOOT_OFFSETS) do
@@ -382,7 +387,7 @@ return function(Window, Library)
 		return fired
 	end
 
-	local function hit(stab, handle, tr)
+	local function hit(handle, tr)
 		local knife = getTool("Knife")
 		if not knife then return end
 		pcall(function() knife:Activate() end)
@@ -415,29 +420,27 @@ return function(Window, Library)
 			equip(knife)
 			knife = getTool("Knife") or knife
 			local handle = knife:FindFirstChild("Handle")
-			local stab = knife:FindFirstChild("Stab")
 			local old, moved = root.CFrame, false
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p ~= lp then
 					local tr = aliveRoot(p)
 					if tr and not inLobby(tr) then
-						-- first try from a distance
-						hit(stab, handle, tr)
+						hit(handle, tr)
 						task.wait(0.15)
 						local tr2 = aliveRoot(p)
 						if tr2 and not inLobby(tr2) then
-							-- still alive: short close-range attempt
 							moved = true
-							root.CFrame = tr2.CFrame * CFrame.new(0, 0, 3)
+							root.CFrame = CFrame.new(tr2.Position + Vector3.new(0, 4, 0))
 							task.wait(0.05)
-							hit(stab, handle, tr2)
+							hit(handle, tr2)
 							task.wait(0.15)
 						end
 					end
 				end
 			end
 			if moved and root.Parent then
-				root.CFrame = old
+				local mcf = spawnCF(findMap())
+				root.CFrame = mcf and (mcf + Vector3.new(0, 3, 0)) or old
 				root.AssemblyLinearVelocity = Vector3.zero
 			end
 		end)
@@ -460,103 +463,15 @@ return function(Window, Library)
 		return false
 	end
 
-	local function dumpTools()
-		local n = 0
-		for _, name in ipairs({ "Gun", "Knife" }) do
-			local t = getTool(name)
-			if t then
-				for _, d in ipairs(t:GetDescendants()) do
-					if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("BindableEvent") then
-						warn("[SezarMM2] " .. name .. ": " .. d:GetFullName() .. " (" .. d.ClassName .. ")")
-						n = n + 1
-					end
-				end
-			end
-		end
-		Library.Notify("Debug", n .. " remotes (see F9)", "on")
-	end
-
-	-- vote
-	local voteId, lastVote = 0, 0
-	S.Vote, S.MultiVote, S.VotePick = false, false, "Pad 1"
-
-	local function padVotes(model)
-		local gui = model:FindFirstChild("VoteInfoGui")
-		local cont = gui and gui:FindFirstChild("Container")
-		local v = cont and cont:FindFirstChild("Votes")
-		return v and tonumber(tostring(v.Text):match("%d+")) or 0
-	end
-
-	local function pickPad()
-		local lobby = workspace:FindFirstChild("Lobby")
-		local vp = lobby and lobby:FindFirstChild("VotePads")
-		if not vp then return nil end
-		if S.VotePick == "Most Votes" then
-			local best, bn
-			for _, m in ipairs(vp:GetChildren()) do
-				local pad = m:FindFirstChild("Pad")
-				if pad then
-					local n = padVotes(m)
-					if not bn or n > bn then best, bn = pad, n end
-				end
-			end
-			return best
-		end
-		local idx = tostring(S.VotePick):match("%d")
-		local m = idx and vp:FindFirstChild("VotePad" .. idx)
-		return m and m:FindFirstChild("Pad")
-	end
-
-	local function doVote()
-		local ch = lp.Character
-		local root = ch and ch:FindFirstChild("HumanoidRootPart")
-		local pad = pickPad()
-		if not root or not pad or not inLobby(root) then return false end
-		local home = root.CFrame
-		local n = S.MultiVote and 12 or 1
-		for _ = 1, n do
-			if firetouchinterest then
-				pcall(function()
-					firetouchinterest(root, pad, 0)
-					task.wait()
-					firetouchinterest(root, pad, 1)
-				end)
-			end
-			root.CFrame = pad.CFrame + Vector3.new(0, 3, 0)
-			task.wait(0.15)
-			root.CFrame = home
-			task.wait(0.15)
-		end
-		root.AssemblyLinearVelocity = Vector3.zero
-		return true
-	end
-
-	local function voteLoop(id)
-		while S.Vote and voteId == id do
-			pcall(function()
-				local ch = lp.Character
-				local root = ch and ch:FindFirstChild("HumanoidRootPart")
-				if not root then return end
-				if inLobby(root) then
-					if os.clock() - lastVote > 20 and pickPad() then
-						lastVote = os.clock()
-						doVote()
-					end
-				else
-					lastVote = 0
-				end
-			end)
-			task.wait(1)
-		end
-	end
-
-	local SPEEDS = { Slow = 20, Normal = 28 }
-	local farmSpeed, farmMode = SPEEDS.Normal, "Normal"
+	-- farm
+	local SPEEDS = { Slow = 20, Normal = 28, Fast = 34 }
+	local farmSpeed, farmMode = SPEEDS.Normal, "Top"
 	local farmId, curTween = 0, nil
 	local coinCount, farmStart = 0, nil
 	local lastGun = nil
 	local visited = setmetatable({}, { __mode = "k" })
 	local lastCont = nil
+	local STEP = 10
 
 	local function segDist(a, b, p)
 		local ab = b - a
@@ -575,7 +490,7 @@ return function(Window, Library)
 			lastCont = coinCont
 			visited = setmetatable({}, { __mode = "k" })
 		end
-		local mr = S.Avoid and murdererRoot() or nil
+		local mr = (S.Avoid and farmMode ~= "Underground") and murdererRoot() or nil
 		local best, bd = nil, math.huge
 		for _, c in ipairs(coinCont:GetChildren()) do
 			if c:IsA("BasePart") and not visited[c] then
@@ -617,6 +532,23 @@ return function(Window, Library)
 		return finished and done
 	end
 
+	local function stepTo(root, pos, watch, id)
+		local guard = 0
+		while S.Farm and farmId == id and guard < 200 do
+			guard = guard + 1
+			local d = pos - root.Position
+			local dist = d.Magnitude
+			if dist <= 3 then return true end
+			if watch then
+				local mr = murdererRoot()
+				if mr and (mr.Position - root.Position).Magnitude < 28 then return false end
+			end
+			root.CFrame = CFrame.new(root.Position + d.Unit * math.min(STEP, dist))
+			task.wait(0.15)
+		end
+		return false
+	end
+
 	local function fleeFrom(root, mr, id)
 		local best, bd = nil, 0
 		if coinCont and coinCont.Parent then
@@ -629,7 +561,28 @@ return function(Window, Library)
 				end
 			end
 		end
-		if best then goTo(root, best.CFrame, false, id) end
+		if best then
+			if farmMode == "Teleport" then
+				stepTo(root, best.Position, false, id)
+			else
+				goTo(root, best.CFrame, false, id)
+			end
+		end
+	end
+
+	local function collectUnderground(root, coin, id)
+		local p = coin.Position
+		setAnchor(true)
+		if not goTo(root, CFrame.new(p.X, p.Y - 9, p.Z), false, id) then return false end
+		if not goTo(root, CFrame.new(p.X, p.Y - 2.5, p.Z), false, id) then return false end
+		if firetouchinterest then
+			pcall(function()
+				firetouchinterest(root, coin, 0)
+				task.wait()
+				firetouchinterest(root, coin, 1)
+			end)
+		end
+		return true
 	end
 
 	local function farmLoop(id)
@@ -651,6 +604,7 @@ return function(Window, Library)
 				end
 
 				if inLobby(root) then
+					setAnchor(false)
 					wasLobby, full = true, false
 					task.wait(1)
 					return
@@ -663,8 +617,11 @@ return function(Window, Library)
 					return
 				end
 
+				if farmMode ~= "Underground" then setAnchor(false) end
+
 				if not full and bagFull() then full = true end
 				if full then
+					setAnchor(false)
 					local t0 = os.clock()
 					while S.Farm and farmId == id and os.clock() - t0 < 12 and combatPending() do
 						task.wait(0.5)
@@ -676,7 +633,7 @@ return function(Window, Library)
 					return
 				end
 
-				if S.Avoid then
+				if S.Avoid and farmMode ~= "Underground" then
 					local mr = murdererRoot()
 					if mr and (mr.Position - root.Position).Magnitude < 40 then
 						fleeFrom(root, mr, id)
@@ -691,19 +648,16 @@ return function(Window, Library)
 					return
 				end
 
-				if farmMode == "Touch" and firetouchinterest then
-					pcall(function()
-						firetouchinterest(root, coin, 0)
-						task.wait()
-						firetouchinterest(root, coin, 1)
-					end)
-					visited[coin] = true
-					coinCount = coinCount + 1
-					task.wait(0.12)
-					return
+				local done
+				if farmMode == "Underground" then
+					done = collectUnderground(root, coin, id)
+				elseif farmMode == "Teleport" then
+					done = stepTo(root, coin.Position, S.Avoid, id)
+				else
+					done = goTo(root, coin.CFrame, S.Avoid, id)
 				end
 
-				if goTo(root, coin.CFrame, S.Avoid, id) then
+				if done then
 					visited[coin] = true
 					coinCount = coinCount + 1
 					task.wait(0.15)
@@ -711,12 +665,14 @@ return function(Window, Library)
 			end)
 			if not ok then task.wait(0.5) end
 		end
+		if not S.Farm then setAnchor(false) end
 	end
 
 	local function stopFarm()
 		S.Farm = false
 		farmId = farmId + 1
 		if curTween then pcall(function() curTween:Cancel() end) end
+		setAnchor(false)
 	end
 
 	local shootId, killId = 0, 0
@@ -773,14 +729,18 @@ return function(Window, Library)
 		end
 	end })
 	Tab:Dropdown({
-		Name = "Farm Speed", Flag = "mm2_speed", Default = "Normal",
-		Options = { "Slow", "Normal", "Touch" },
+		Name = "Farm Mode", Flag = "mm2_farmmode", Default = "Top",
+		Options = { "Top", "Teleport", "Underground" },
 		Callback = function(v)
 			farmMode = v
+			if v ~= "Underground" then setAnchor(false) end
+		end,
+	})
+	Tab:Dropdown({
+		Name = "Farm Speed", Flag = "mm2_speed", Default = "Normal",
+		Options = { "Slow", "Normal", "Fast" },
+		Callback = function(v)
 			if SPEEDS[v] then farmSpeed = SPEEDS[v] end
-			if v == "Touch" and not firetouchinterest then
-				Library.Notify("MM2", "Touch mode not supported", "on")
-			end
 		end,
 	})
 	Tab:Toggle({ Name = "Avoid Murderer", Default = true, Flag = "mm2_avoid", NoKey = true, Callback = function(v) S.Avoid = v end })
@@ -804,29 +764,6 @@ return function(Window, Library)
 		if v then task.spawn(killLoop, killId) end
 	end })
 	Tab:Toggle({ Name = "Kill After Full Bag", Flag = "mm2_killfull", NoKey = true, Callback = function(v) S.KillFull = v end })
-
-	-- UI: Vote
-	Tab:Section("Vote")
-	Tab:Toggle({ Name = "Auto Vote Map", Flag = "mm2_vote", Callback = function(v)
-		S.Vote = v
-		voteId = voteId + 1
-		if v then
-			lastVote = 0
-			task.spawn(voteLoop, voteId)
-		end
-	end })
-	Tab:Dropdown({
-		Name = "Vote Pad", Flag = "mm2_votepad", Default = "Pad 1",
-		Options = { "Pad 1", "Pad 2", "Pad 3", "Most Votes" },
-		Callback = function(v) S.VotePick = v end,
-	})
-	Tab:Toggle({ Name = "Multi Vote (test)", Flag = "mm2_multivote", NoKey = true, Callback = function(v) S.MultiVote = v end })
-	Tab:Button("Vote Now", function()
-		task.spawn(function()
-			local ok, res = pcall(doVote)
-			if not ok or not res then Library.Notify("MM2", "Vote failed", "on") end
-		end)
-	end)
 
 	-- UI: Teleport
 	Tab:Section("Teleport")
@@ -859,9 +796,6 @@ return function(Window, Library)
 		local mins = farmStart and math.floor((os.clock() - farmStart) / 60) or 0
 		Library.Notify("Farm Stats", coinCount .. " coin / " .. mins .. " min", "on")
 	end)
-	Tab:Button("Dump Tool Info", function()
-		pcall(dumpTools)
-	end)
 
 	-- main loop
 	local acc = 0
@@ -890,8 +824,6 @@ return function(Window, Library)
 	table.insert(Library.OnUnload, function()
 		S.Roles, S.Gun, S.Coin = false, false, false
 		S.AutoShoot, S.Kill = false, false
-		S.Vote = false
-		voteId = voteId + 1
 		Library.RoleESP = false
 		shootId = shootId + 1
 		killId = killId + 1
