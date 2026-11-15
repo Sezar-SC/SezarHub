@@ -497,6 +497,56 @@ return function(Window, Library)
 	local lastCont = nil
 	local STEP = 5
 
+	local function touchCoin(root, coin)
+		if not firetouchinterest or not coin or not coin.Parent then return end
+		for _, p in ipairs(root.Parent:GetChildren()) do
+			if p:IsA("BasePart") then
+				pcall(firetouchinterest, p, coin, 0)
+				pcall(firetouchinterest, p, coin, 1)
+			end
+		end
+	end
+
+	local function goToCoin(root, coin, watch, id)
+		local target = coin.Position
+		local dist = (root.Position - target).Magnitude
+		local t = math.max(dist / farmSpeed, 0.05)
+		local tw = TweenService:Create(root, TweenInfo.new(t, Enum.EasingStyle.Linear), { CFrame = CFrame.new(target) })
+		curTween = tw
+		tw:Play()
+		local t0, touched, ok = os.clock(), false, false
+		while S.Farm and farmId == id and os.clock() - t0 < t + 0.6 do
+			if not coin.Parent then
+				ok = true
+				break
+			end
+			local d = (root.Position - target).Magnitude
+			if d <= 4 and not touched then
+				touched = true
+				touchCoin(root, coin)
+				task.wait(0.05)
+				if not coin.Parent then
+					ok = true
+					break
+				end
+			end
+			if d <= 1.5 then
+				touchCoin(root, coin)
+				ok = true
+				break
+			end
+			if watch then
+				local mr = murdererRoot()
+				if mr and (mr.Position - root.Position).Magnitude < 28 then
+					break
+				end
+			end
+			task.wait(0.03)
+		end
+		pcall(function() tw:Cancel() end)
+		return ok
+	end
+
 	local function segDist(a, b, p)
 		local ab = b - a
 		local l2 = ab:Dot(ab)
