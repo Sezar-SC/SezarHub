@@ -248,6 +248,17 @@ return function(Window, Library)
 			return
 		end
 		local old = root.CFrame
+		if firetouchinterest then
+			pcall(function()
+				part.CFrame = root.CFrame
+				firetouchinterest(root, part, 0)
+				task.wait()
+				firetouchinterest(root, part, 1)
+			end)
+			task.wait(0.4)
+			local bp = lp:FindFirstChildOfClass("Backpack")
+			if (bp and bp:FindFirstChild("Gun")) or (lp.Character and lp.Character:FindFirstChild("Gun")) then return end
+		end
 		root.CFrame = part.CFrame
 		if firetouchinterest then
 			pcall(function()
@@ -364,7 +375,7 @@ return function(Window, Library)
 		gun = getTool("Gun") or gun
 
 		local old
-		if not hasLOS(root.Position, mr) then
+		if false then
 			for _, off in ipairs(SHOOT_OFFSETS) do
 				local pos = (mr.CFrame * CFrame.new(off)).Position
 				if hasLOS(pos, mr) then
@@ -385,7 +396,8 @@ return function(Window, Library)
 		if rf then
 			fired = pcall(function() rf:InvokeServer(1, tgt, "AH2") end)
 		elseif sh then
-			fired = pcall(function() sh:FireServer(root.CFrame, CFrame.new(tgt)) end)
+			local from = CFrame.new(mr.Position + Vector3.new(0, 1, 0))
+			fired = pcall(function() sh:FireServer(from, CFrame.new(mr.Position)) end)
 		end
 		if not fired and not silent then
 			Library.Notify("MM2", "Shoot failed", "on")
